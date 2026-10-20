@@ -51,6 +51,11 @@ class MainTest {
         assertEquals("LogicalAggregate", result.path("tree").path("type").asText());
         assertEquals(4, result.path("rules").get(0).path("matchedNodeIds").size());
         assertTrue(result.path("rules").get(0).path("explanation").asText().contains("размножать"));
+        var optimized = result.path("optimized");
+        assertTrue(optimized.path("changed").asBoolean());
+        assertTrue(optimized.path("sql").asText().contains("EXISTS"));
+        assertTrue(optimized.path("plan").asText().contains("joinType=[semi]"));
+        assertFalse(optimized.path("tree").path("type").asText().isBlank());
         assertTrue(response.headers().firstValue("Content-Type").orElseThrow().contains("application/json"));
     }
 

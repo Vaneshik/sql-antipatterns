@@ -6,6 +6,8 @@ import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.avatica.util.Quoting;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.plan.Strong;
+import org.apache.calcite.plan.hep.HepPlanner;
+import org.apache.calcite.plan.hep.HepProgramBuilder;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Aggregate;
 import org.apache.calcite.rel.core.Filter;
@@ -13,6 +15,9 @@ import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rel.core.TableScan;
+import org.apache.calcite.rel.rel2sql.RelToSqlConverter;
+import org.apache.calcite.rel.rules.CoreRules;
+import org.apache.calcite.rel.rules.FilterAggregateTransposeRule;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
@@ -25,6 +30,7 @@ import org.apache.calcite.sql.SqlJoin;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlSelect;
+import org.apache.calcite.sql.dialect.PostgresqlSqlDialect;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
@@ -37,7 +43,9 @@ import org.apache.calcite.util.ImmutableBitSet;
 public final class Analyzer {
     public enum Status { FOUND, NOT_FOUND, UNSUPPORTED }
 
-    public record Result(String plan, PlanNode tree, List<RuleResult> rules) {}
+    public record Result(String plan, PlanNode tree, List<RuleResult> rules, Optimization optimized) {}
+
+    public record Optimization(String sql, String plan, PlanNode tree, List<RuleResult> rules, boolean changed) {}
 
     public record RuleResult(String ruleId, String title, String pattern, Status status,
                              String explanation, String recommendation, List<Integer> matchedNodeIds) {
@@ -69,13 +77,56 @@ public final class Analyzer {
                         .withRelBuilderConfigTransform(config -> config.withAggregateUnique(true).withSimplify(false)))
                 .build())) {
             SqlNode validated = planner.validate(planner.parse(statement));
-            RelNode rel = planner.rel(validated).rel;
-            List<RuleResult> rules = new ArrayList<>();
-            rules.add(distinctJoin(original, rel));
-            inspect(rel, rules);
-            inspectCartesianProduct(rel, rules);
-            return new Result(RelOptUtil.toString(rel), PlanNode.from(rel), List.copyOf(rules));
+            RelNode rel = planner.rel(validated).project();
+            String plan = RelOptUtil.toString(rel);
+            PlanNode tree = PlanNode.from(rel);
+            List<RuleResult> rules = checkRules(original, rel);
+            RelNode optimized = rel;
+            if (rules.getFirst().status() == Status.FOUND) {
+                Aggregate aggregate = (Aggregate) rel;
+                Project project = (Project) aggregate.getInput();
+                RelNode input = project.getInput();
+                List<RexNode> conditions = new ArrayList<>();
+                if (input instanceof Filter filter) {
+                    conditions.add(filter.getCondition());
+                    input = filter.getInput();
+                }
+                Join join = (Join) input;
+                conditions.add(join.getCondition());
+                RelNode semiJoin = join.copy(join.getTraitSet(),
+                        RexUtil.composeConjunction(rel.getCluster().getRexBuilder(), conditions),
+                        join.getLeft(), join.getRight(), JoinRelType.SEMI, false);
+                optimized = project.copy(project.getTraitSet(), semiJoin, project.getProjects(), project.getRowType());
+            }
+            var program = new HepProgramBuilder()
+                    .addRuleInstance(CoreRules.AGGREGATE_REMOVE)
+                    .addRuleInstance(FilterAggregateTransposeRule.Config.DEFAULT.withOperandSupplier(b ->
+                            b.operand(Filter.class)
+                                    .predicate(filter -> RexUtil.isDeterministic(filter.getCondition()))
+                                    .oneInput(a -> a.operand(Aggregate.class).anyInputs()))
+                            .as(FilterAggregateTransposeRule.Config.class).toRule())
+                    .addRuleInstance(CoreRules.FILTER_INTO_JOIN)
+                    .addRuleInstance(CoreRules.FILTER_REDUCE_EXPRESSIONS)
+                    .addRuleInstance(CoreRules.PROJECT_REDUCE_EXPRESSIONS)
+                    .build();
+            HepPlanner optimizer = new HepPlanner(program);
+            optimizer.setRoot(optimized);
+            optimized = optimizer.findBestExp();
+            String optimizedPlan = RelOptUtil.toString(optimized);
+            String optimizedSql = new RelToSqlConverter(PostgresqlSqlDialect.DEFAULT)
+                    .visitRoot(optimized).asStatement().toSqlString(PostgresqlSqlDialect.DEFAULT).getSql();
+            SqlNode optimizedOriginal = SqlParser.create(optimizedSql, parserConfig).parseQuery();
+            return new Result(plan, tree, rules, new Optimization(optimizedSql, optimizedPlan,
+                    PlanNode.from(optimized), checkRules(optimizedOriginal, optimized), !plan.equals(optimizedPlan)));
         }
+    }
+
+    private static List<RuleResult> checkRules(SqlNode original, RelNode rel) {
+        List<RuleResult> rules = new ArrayList<>();
+        rules.add(distinctJoin(original, rel));
+        inspect(rel, rules);
+        inspectCartesianProduct(rel, rules);
+        return List.copyOf(rules);
     }
 
     private static RuleResult distinctJoin(SqlNode original, RelNode rel) {

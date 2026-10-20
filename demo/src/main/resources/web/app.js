@@ -7,7 +7,11 @@ const finding = document.querySelector("#finding");
 const state = document.querySelector("#state");
 const tree = document.querySelector("#tree");
 const example = document.querySelector("#example");
+const optimization = document.querySelector("#optimization");
+const before = document.querySelector("#before");
+const after = document.querySelector("#after");
 let pending;
+let analysis;
 
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -21,6 +25,9 @@ function clearResult(message) {
   pending = null;
   submit.disabled = false;
   result.hidden = true;
+  optimization.hidden = true;
+  after.disabled = true;
+  analysis = null;
   finding.hidden = true;
   error.hidden = true;
   empty.hidden = false;
@@ -48,6 +55,17 @@ function inspect(node, button) {
 }
 
 function render(data) {
+  analysis = data;
+  document.querySelector("#optimized-sql").value = data.optimized.sql;
+  document.querySelector("#optimization-state").textContent = data.optimized.changed ? "" : "План не изменился.";
+  optimization.hidden = false;
+  after.disabled = false;
+  showPlan(data);
+}
+
+function showPlan(data) {
+  before.setAttribute("aria-pressed", String(data === analysis));
+  after.setAttribute("aria-pressed", String(data === analysis.optimized));
   const matches = data.rules.filter(rule => rule.status === "FOUND");
   const matched = new Set(matches.flatMap(rule => rule.matchedNodeIds));
   let count = 0;
@@ -59,7 +77,9 @@ function render(data) {
     button.setAttribute("aria-pressed", "false");
     button.setAttribute("aria-label", `${node.type} #${node.id}${matched.has(node.id) ? ", совпадение с правилом" : ""}`);
     const summary = Object.entries(node.attributes).map(([key, value]) => `${key}=${value}`).join(" · ");
-    button.append(element("strong", node.type.replace(/^Logical/, "")), element("span", summary || "Нет атрибутов"));
+    const label = node.type === "LogicalJoin" ? `${node.attributes.joinType.toUpperCase()} JOIN`
+      : node.type.replace(/^Logical/, "");
+    button.append(element("strong", label), element("span", summary || "Нет атрибутов"));
     button.title = summary;
     button.addEventListener("click", () => inspect(node, button));
     item.append(button);
@@ -143,6 +163,12 @@ async function loadExample(name) {
 }
 
 example.addEventListener("change", () => loadExample(example.value));
+before.addEventListener("click", () => {
+  if (analysis) showPlan(analysis);
+});
+after.addEventListener("click", () => {
+  if (analysis) showPlan(analysis.optimized);
+});
 document.querySelector("#sql-form").addEventListener("submit", event => {
   event.preventDefault();
   analyze();
