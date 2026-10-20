@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Демонстрация анализа логического плана SQL в Apache Calcite.">
+  <title>Анализ SQL</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>Анализ SQL</h1>
+    <div class="workspace">
+      <section class="editor" aria-labelledby="editor-title">
+          <h2 id="editor-title">SQL-запрос</h2>
+          <select id="example" aria-label="Пример SQL">
+            <optgroup label="Антипаттерны">
+              <option value="distinct-join">DISTINCT после JOIN</option>
+              <option value="redundant-distinct">DISTINCT над уникальным входом</option>
+              <option value="distinct-group-by">DISTINCT вместе с GROUP BY</option>
+              <option value="group-filter">Фильтр по ключу группировки</option>
+              <option value="null-comparison">Сравнение с NULL</option>
+              <option value="null-filter">Всегда ложный фильтр: WHERE name = NULL</option>
+              <option value="left-join-filter">Фильтр после LEFT JOIN</option>
+              <option value="cartesian-product">Декартово произведение</option>
+            </optgroup>
+            <optgroup label="Контрпримеры">
+              <option value="exists">EXISTS вместо JOIN</option>
+              <option value="without-key">DISTINCT без ключа</option>
+              <option value="is-null">Проверка IS NULL</option>
+              <option value="join-in-where">Связь таблиц в WHERE</option>
+              <option value="having-count">HAVING по COUNT</option>
+              <option value="left-join-is-null">LEFT JOIN для поиска отсутствующих строк</option>
+            </optgroup>
+          </select>
+          <form id="sql-form">
+            <label class="sr-only" for="sql">SQL-запрос</label>
+            <textarea id="sql" name="sql" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="SELECT id, name FROM customer"></textarea>
+            <div class="run-row"><button id="analyze" type="submit" title="Ctrl / ⌘ + Enter">Построить план</button></div>
+          </form>
+          <p class="error" id="error" role="alert" hidden></p>
+          <details class="schema">
+            <summary>Схема таблиц</summary>
+            <div class="tables">
+              <pre>customer
+  id INTEGER PRIMARY KEY
+  name VARCHAR(100)</pre>
+              <pre>orders
+  id INTEGER PRIMARY KEY
+  customer_id INTEGER
+  status VARCHAR(20)</pre>
+            </div>
+          </details>
+      </section>
+      <section class="plan" aria-labelledby="tree-title">
+        <div class="section-heading"><h2 id="tree-title">Дерево RelNode</h2><span id="node-count"></span></div>
+        <span id="state" role="status" class="sr-only"></span>
+        <div id="empty" class="empty"><p>Постройте план, чтобы увидеть дерево.</p></div>
+        <div id="result" hidden>
+          <div class="tree-scroll" tabindex="0" role="region" aria-label="Дерево логического плана"><ul class="tree" id="tree"></ul></div>
+          <div class="inspector">
+            <h3 id="selected-title">Узел</h3>
+            <dl id="attributes"></dl>
+            <details><summary>Колонки и ссылки $n</summary><div id="fields"></div></details>
+          </div>
+          <details class="raw-plan"><summary>Текстовый план Calcite</summary><pre id="plan"></pre></details>
+        </div>
+      </section>
+      <section class="findings" aria-labelledby="finding-title">
+          <h2 id="finding-title">Антипаттерны</h2>
+          <div id="finding" hidden></div>
+      </section>
+    </div>
+    <noscript>Для отображения дерева включите JavaScript.</noscript>
+  </main>
+</body>
+</html>
