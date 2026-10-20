@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.tools.ValidationException;
 import org.junit.jupiter.api.Test;
@@ -42,6 +43,22 @@ class AnalyzerTest {
         assertTrue(result.plan().contains("LogicalAggregate"));
         assertTrue(result.plan().contains("LogicalJoin"));
         assertTrue(result.recommendation().contains("EXISTS"));
+        PlanNode aggregate = result.tree();
+        assertEquals("LogicalAggregate", aggregate.type());
+        PlanNode project = aggregate.inputs().getFirst();
+        assertEquals("LogicalProject", project.type());
+        PlanNode input = project.inputs().getFirst();
+        PlanNode join = input.type().equals("LogicalFilter") ? input.inputs().getFirst() : input;
+        assertEquals("LogicalJoin", join.type());
+        assertEquals(input == join
+                        ? List.of(aggregate.id(), project.id(), join.id())
+                        : List.of(aggregate.id(), project.id(), input.id(), join.id()),
+                result.matchedNodeIds());
+        assertEquals(2, join.inputs().size());
+        assertEquals("[public, customer]", join.inputs().get(0).attributes().get("table"));
+        assertEquals("[public, orders]", join.inputs().get(1).attributes().get("table"));
+        assertTrue(List.of("=($0, $3)", "=($3, $0)").contains(join.attributes().get("condition")));
+        assertTrue(join.inputs().getFirst().fields().getFirst().startsWith("id: INTEGER"));
     }
 
     @Test
@@ -53,6 +70,7 @@ class AnalyzerTest {
         assertEquals(NOT_FOUND, result.status());
         assertTrue(result.explanation().contains("нет ключа"));
         assertTrue(result.recommendation().isEmpty());
+        assertTrue(result.matchedNodeIds().isEmpty());
     }
 
     @Test
@@ -63,6 +81,7 @@ class AnalyzerTest {
                 """);
         assertEquals(NOT_FOUND, result.status(), result.explanation());
         assertTrue(result.recommendation().isEmpty());
+        assertTrue(result.matchedNodeIds().isEmpty());
     }
 
     @ParameterizedTest
@@ -76,6 +95,7 @@ class AnalyzerTest {
         Analyzer.Result result = analyzer.analyze(sql);
         assertEquals(NOT_FOUND, result.status(), result.explanation());
         assertTrue(result.recommendation().isEmpty());
+        assertTrue(result.matchedNodeIds().isEmpty());
     }
 
     @ParameterizedTest
@@ -118,6 +138,8 @@ class AnalyzerTest {
         assertEquals(UNSUPPORTED, result.status(), result.explanation() + "\n" + result.plan());
         assertFalse(result.explanation().isBlank());
         assertTrue(result.recommendation().isEmpty());
+        assertTrue(result.matchedNodeIds().isEmpty());
+        assertFalse(result.tree().type().isBlank());
     }
 
     @ParameterizedTest

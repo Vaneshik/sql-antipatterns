@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Демонстрация анализа логического плана SQL в Apache Calcite.">
+  <title>Анализ SQL</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <h1>Анализ SQL</h1>
+    <div class="workspace">
+      <section class="editor" aria-labelledby="editor-title">
+          <h2 id="editor-title">SQL-запрос</h2>
+          <div class="examples" aria-label="Примеры SQL">
+            <button type="button" data-example="distinct-join" aria-pressed="false">DISTINCT + JOIN</button>
+            <button type="button" data-example="exists" aria-pressed="false">EXISTS</button>
+            <button type="button" data-example="without-key" aria-pressed="false">Без ключа</button>
+          </div>
+          <form id="sql-form">
+            <label class="sr-only" for="sql">SQL-запрос</label>
+            <textarea id="sql" name="sql" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder="SELECT id, name FROM customer"></textarea>
+            <div class="run-row"><button id="analyze" type="submit" title="Ctrl / ⌘ + Enter">Построить план</button></div>
+          </form>
+          <p class="error" id="error" role="alert" hidden></p>
+          <details class="schema">
+            <summary>Схема таблиц</summary>
+            <div class="tables">
+              <pre>customer
+  id INTEGER PRIMARY KEY
+  name VARCHAR(100)</pre>
+              <pre>orders
+  id INTEGER PRIMARY KEY
+  customer_id INTEGER
+  status VARCHAR(20)</pre>
+            </div>
+          </details>
+      </section>
+      <section class="plan" aria-labelledby="tree-title">
+        <div class="section-heading"><h2 id="tree-title">Дерево RelNode</h2><span id="node-count"></span></div>
+        <span id="state" role="status" class="sr-only"></span>
+        <div id="empty" class="empty"><p>Постройте план, чтобы увидеть дерево.</p></div>
+        <div id="result" hidden>
+          <div class="tree-scroll" tabindex="0" role="region" aria-label="Дерево логического плана"><ul class="tree" id="tree"></ul></div>
+          <div class="inspector">
+            <h3 id="selected-title">Узел</h3>
+            <dl id="attributes"></dl>
+            <details><summary>Колонки и ссылки $n</summary><div id="fields"></div></details>
+          </div>
+          <details class="raw-plan"><summary>Текстовый план Calcite</summary><pre id="plan"></pre></details>
+        </div>
+      </section>
+      <section class="findings" aria-labelledby="finding-title">
+          <h2 id="finding-title">Правило: DISTINCT после JOIN</h2>
+          <code class="pattern">Aggregate → Project → [Filter] → Join</code>
+          <div id="finding" hidden>
+            <h3 id="verdict"></h3>
+            <p id="explanation"></p>
+            <p class="recommendation" id="recommendation" hidden></p>
+          </div>
+      </section>
+    </div>
+    <noscript>Для отображения дерева включите JavaScript.</noscript>
+  </main>
+</body>
+</html>

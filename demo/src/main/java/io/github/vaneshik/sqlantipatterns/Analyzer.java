@@ -34,7 +34,12 @@ import org.apache.calcite.util.ImmutableBitSet;
 public final class Analyzer {
     public enum Status { FOUND, NOT_FOUND, UNSUPPORTED }
 
-    public record Result(String plan, Status status, String explanation, String recommendation) {}
+    public record Result(String plan, PlanNode tree, Status status, String explanation,
+                         String recommendation, List<Integer> matchedNodeIds) {
+        private Result(RelNode rel, Status status, String explanation, String recommendation) {
+            this(RelOptUtil.toString(rel), PlanNode.from(rel), status, explanation, recommendation, List.of());
+        }
+    }
 
     public Result analyze(String sql)
             throws SqlParseException, ValidationException, RelConversionException {
@@ -48,6 +53,9 @@ public final class Analyzer {
                 .withQuotedCasing(Casing.UNCHANGED)
                 .withCaseSensitive(true);
         SqlNode original = SqlParser.create(statement, parserConfig).parseQuery();
+        if (!original.isA(SqlKind.QUERY)) {
+            throw new ValidationException("Демо принимает только запросы чтения: SELECT, WITH или VALUES.");
+        }
         try (Planner planner = Frameworks.getPlanner(Frameworks.newConfigBuilder()
                 .parserConfig(parserConfig)
                 .defaultSchema(DemoSchema.create())
@@ -56,38 +64,37 @@ public final class Analyzer {
                 .build())) {
             SqlNode validated = planner.validate(planner.parse(statement));
             RelNode rel = planner.rel(validated).rel;
-            String plan = RelOptUtil.toString(rel);
             if (!(original instanceof SqlSelect select)) {
-                return new Result(plan, Status.UNSUPPORTED,
+                return new Result(rel, Status.UNSUPPORTED,
                         "Поддерживается один SELECT без ORDER BY, CTE и операций над множествами.", "");
             }
             if (select.getGroup() != null || select.getHaving() != null
                     || !select.getWindowList().isEmpty()
                     || select.getFetch() != null || select.getOffset() != null) {
-                return new Result(plan, Status.UNSUPPORTED,
+                return new Result(rel, Status.UNSUPPORTED,
                         "GROUP BY, HAVING, окна и LIMIT/OFFSET пока не поддерживаются.", "");
             }
             if (!select.isDistinct()) {
-                return new Result(plan, Status.NOT_FOUND,
+                return new Result(rel, Status.NOT_FOUND,
                         "В запросе нет SELECT DISTINCT — правило DISTINCT + JOIN не применяется.", "");
             }
             if (!(select.getFrom() instanceof SqlJoin sqlJoin)
                     || sqlJoin.isNatural()
                     || sqlJoin.getConditionType() != JoinConditionType.ON
                     || !isBaseTable(sqlJoin.getLeft()) || !isBaseTable(sqlJoin.getRight())) {
-                return new Result(plan, Status.UNSUPPORTED,
+                return new Result(rel, Status.UNSUPPORTED,
                         "Для этого правила нужен один INNER JOIN базовых таблиц с условием ON.", "");
             }
             if (!(rel instanceof Aggregate aggregate)
                     || !aggregate.getAggCallList().isEmpty()
                     || !(aggregate.getInput() instanceof Project project)) {
-                return new Result(plan, Status.UNSUPPORTED,
+                return new Result(rel, Status.UNSUPPORTED,
                         "План не соответствует DISTINCT над простой проекцией.", "");
             }
             RelNode input = project.getInput();
             if (input instanceof Filter filter) {
                 if (!simplePredicate(filter.getCondition())) {
-                    return new Result(plan, Status.UNSUPPORTED,
+                    return new Result(rel, Status.UNSUPPORTED,
                             "Поддерживаются только сравнения колонок и констант, соединённые AND.", "");
                 }
                 input = filter.getInput();
@@ -97,7 +104,7 @@ public final class Analyzer {
                     || !(join.getLeft() instanceof TableScan left)
                     || !(join.getRight() instanceof TableScan right)
                     || left.getTable().getQualifiedName().equals(right.getTable().getQualifiedName())) {
-                return new Result(plan, Status.UNSUPPORTED,
+                return new Result(rel, Status.UNSUPPORTED,
                         "Нужен один INNER JOIN двух разных базовых таблиц.", "");
             }
             int leftWidth = left.getRowType().getFieldCount();
@@ -107,39 +114,41 @@ public final class Analyzer {
                         || !(call.operands.get(0) instanceof RexInputRef first)
                         || !(call.operands.get(1) instanceof RexInputRef second)
                         || (first.getIndex() < leftWidth) == (second.getIndex() < leftWidth)) {
-                    return new Result(plan, Status.UNSUPPORTED,
+                    return new Result(rel, Status.UNSUPPORTED,
                             "ON должен сравнивать колонки разных сторон через равенство.", "");
                 }
                 rightJoinColumns.set(Math.max(first.getIndex(), second.getIndex()) - leftWidth);
             }
             if (rightJoinColumns.isEmpty()) {
-                return new Result(plan, Status.UNSUPPORTED,
+                return new Result(rel, Status.UNSUPPORTED,
                         "ON должен сравнивать колонки разных сторон через равенство.", "");
             }
             ImmutableBitSet.Builder projectedColumns = ImmutableBitSet.builder();
             for (RexNode column : project.getProjects()) {
                 if (!(column instanceof RexInputRef ref) || ref.getIndex() >= leftWidth) {
-                    return new Result(plan, Status.UNSUPPORTED,
+                    return new Result(rel, Status.UNSUPPORTED,
                             "В SELECT допускаются только прямые колонки левой таблицы.", "");
                 }
                 projectedColumns.set(ref.getIndex());
             }
             ImmutableBitSet columns = projectedColumns.build();
             if (!left.getTable().isKey(columns)) {
-                return new Result(plan, Status.NOT_FOUND,
+                return new Result(rel, Status.NOT_FOUND,
                         "В проекции нет ключа левой таблицы. Удаление DISTINCT может изменить "
                                 + "число одинаковых строк; совет заменить соединение на EXISTS не выдаётся.", "");
             }
             if (right.getTable().isKey(rightJoinColumns.build())) {
-                return new Result(plan, Status.NOT_FOUND,
+                return new Result(rel, Status.NOT_FOUND,
                         "Соединение идёт по ключу правой таблицы и не размножает строки левой.", "");
             }
-            return new Result(plan, Status.FOUND,
+            List<Integer> matchedNodeIds = project.getInput() instanceof Filter filter
+                    ? List.of(aggregate.getId(), project.getId(), filter.getId(), join.getId())
+                    : List.of(aggregate.getId(), project.getId(), join.getId());
+            return new Result(RelOptUtil.toString(rel), PlanNode.from(rel), Status.FOUND,
                     "INNER JOIN может размножать строки левой таблицы, а DISTINCT удаляет копии. "
-                            + "В результате есть её ключ, колонки правой таблицы не выводятся. "
-                            + "Узел плана: " + aggregate.getRelTypeName() + "#" + aggregate.getId() + ".",
-                    "Рассмотрите WHERE EXISTS с сохранением всех условий ON и WHERE. "
-                            + "Это рекомендация по структуре запроса; ускорение не измерялось.");
+                            + "В результате есть её ключ, колонки правой таблицы не выводятся.",
+                    "Рассмотрите WHERE EXISTS с сохранением всех условий ON и WHERE.",
+                    matchedNodeIds);
         }
     }
 
