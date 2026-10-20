@@ -6,7 +6,7 @@ const error = document.querySelector("#error");
 const finding = document.querySelector("#finding");
 const state = document.querySelector("#state");
 const tree = document.querySelector("#tree");
-const exampleButtons = [...document.querySelectorAll("[data-example]")];
+const example = document.querySelector("#example");
 let pending;
 
 function element(tag, text, className) {
@@ -48,7 +48,8 @@ function inspect(node, button) {
 }
 
 function render(data) {
-  const matched = new Set(data.matchedNodeIds);
+  const matches = data.rules.filter(rule => rule.status === "FOUND");
+  const matched = new Set(matches.flatMap(rule => rule.matchedNodeIds));
   let count = 0;
   function branch(node) {
     count++;
@@ -72,16 +73,21 @@ function render(data) {
   tree.replaceChildren(branch(data.tree));
   document.querySelector("#node-count").textContent = `Узлов: ${count}`;
   document.querySelector("#plan").textContent = data.plan;
-  finding.className = data.status.toLowerCase();
-  document.querySelector("#verdict").textContent = {
-    FOUND: "Найдено совпадение",
-    NOT_FOUND: "Правило не сработало",
-    UNSUPPORTED: "Запрос вне области проверки правила"
-  }[data.status];
-  document.querySelector("#explanation").textContent = data.explanation;
-  const recommendation = document.querySelector("#recommendation");
-  recommendation.textContent = data.recommendation;
-  recommendation.hidden = !data.recommendation;
+  finding.replaceChildren();
+  for (const match of matches) {
+    const item = element("article", undefined, "found");
+    item.append(element("h3", match.title), element("code", match.pattern, "pattern"),
+      element("p", match.explanation), element("p", match.recommendation));
+    finding.append(item);
+  }
+  if (!matches.length) {
+    finding.append(element("p", "Совпадений нет."));
+    for (const rule of data.rules) {
+      if (rule.status === "NOT_FOUND" && rule.explanation) {
+        finding.append(element("p", rule.explanation));
+      }
+    }
+  }
   empty.hidden = true;
   result.hidden = false;
   finding.hidden = false;
@@ -115,14 +121,13 @@ async function analyze() {
   }
 }
 
-async function loadExample(button) {
+async function loadExample(name) {
   clearResult("Загрузка примера…");
   const request = new AbortController();
   pending = request;
   submit.disabled = true;
-  exampleButtons.forEach(item => item.setAttribute("aria-pressed", String(item === button)));
   try {
-    const response = await fetch(`/examples/${button.dataset.example}.sql`, { signal: request.signal });
+    const response = await fetch(`/examples/${name}.sql`, { signal: request.signal });
     if (!response.ok) throw new Error("Не удалось загрузить пример.");
     const text = await response.text();
     if (pending !== request) return;
@@ -137,14 +142,14 @@ async function loadExample(button) {
   }
 }
 
-exampleButtons.forEach(button => button.addEventListener("click", () => loadExample(button)));
+example.addEventListener("change", () => loadExample(example.value));
 document.querySelector("#sql-form").addEventListener("submit", event => {
   event.preventDefault();
   analyze();
 });
 sql.addEventListener("input", () => {
   clearResult("Запрос изменён. Постройте план заново.");
-  exampleButtons.forEach(button => button.setAttribute("aria-pressed", "false"));
+  example.selectedIndex = -1;
 });
 sql.addEventListener("keydown", event => {
   if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
@@ -152,4 +157,4 @@ sql.addEventListener("keydown", event => {
     analyze();
   }
 });
-loadExample(exampleButtons[0]);
+loadExample(example.value);

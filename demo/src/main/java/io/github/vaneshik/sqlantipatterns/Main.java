@@ -14,13 +14,24 @@ import org.apache.calcite.tools.ValidationException;
 public final class Main {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final int MAX_SQL_BYTES = 16_384;
-    private static final Map<String, String> ASSETS = Map.of(
-            "/", "text/html; charset=utf-8",
-            "/app.js", "text/javascript; charset=utf-8",
-            "/style.css", "text/css; charset=utf-8",
-            "/examples/distinct-join.sql", "text/plain; charset=utf-8",
-            "/examples/exists.sql", "text/plain; charset=utf-8",
-            "/examples/without-key.sql", "text/plain; charset=utf-8");
+    private static final Map<String, String> ASSETS = Map.ofEntries(
+            Map.entry("/", "text/html; charset=utf-8"),
+            Map.entry("/app.js", "text/javascript; charset=utf-8"),
+            Map.entry("/style.css", "text/css; charset=utf-8"),
+            Map.entry("/examples/distinct-join.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/exists.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/without-key.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/redundant-distinct.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/distinct-group-by.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/group-filter.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/null-comparison.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/null-filter.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/left-join-filter.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/cartesian-product.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/is-null.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/join-in-where.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/having-count.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/left-join-is-null.sql", "text/plain; charset=utf-8"));
 
     public static void main(String[] args) throws IOException {
         if (args.length > 2) {

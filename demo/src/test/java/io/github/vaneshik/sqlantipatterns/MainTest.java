@@ -16,6 +16,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class MainTest {
@@ -46,11 +47,34 @@ class MainTest {
         var response = analyze(example.body());
         assertEquals(200, response.statusCode());
         var result = JSON.readTree(response.body());
-        assertEquals("FOUND", result.path("status").asText());
+        assertEquals("FOUND", result.path("rules").get(0).path("status").asText());
         assertEquals("LogicalAggregate", result.path("tree").path("type").asText());
-        assertEquals(4, result.path("matchedNodeIds").size());
-        assertTrue(result.path("explanation").asText().contains("размножать"));
+        assertEquals(4, result.path("rules").get(0).path("matchedNodeIds").size());
+        assertTrue(result.path("rules").get(0).path("explanation").asText().contains("размножать"));
         assertTrue(response.headers().firstValue("Content-Type").orElseThrow().contains("application/json"));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "redundant-distinct, redundant-distinct", "distinct-group-by, redundant-distinct",
+            "group-filter, group-filter", "null-comparison, null-comparison",
+            "null-filter, false-filter",
+            "left-join-filter, left-join-filter", "cartesian-product, cartesian-product",
+            "is-null, none", "join-in-where, none", "having-count, none", "left-join-is-null, none"
+    })
+    void servesNewExamplesAndFindsTheExpectedRule(String example, String expectedRule) throws Exception {
+        var response = client.send(HttpRequest.newBuilder(base.resolve("/examples/" + example + ".sql"))
+                .GET().build(), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        assertEquals(200, response.statusCode());
+        var analysis = analyze(response.body());
+        assertEquals(200, analysis.statusCode());
+        var matches = new java.util.ArrayList<String>();
+        for (var rule : JSON.readTree(analysis.body()).path("rules")) {
+            if (rule.path("status").asText().equals("FOUND")) {
+                matches.add(rule.path("ruleId").asText());
+            }
+        }
+        assertEquals(expectedRule.equals("none") ? java.util.List.of() : java.util.List.of(expectedRule), matches);
     }
 
     @ParameterizedTest
