@@ -1,0 +1,53 @@
+{
+  "status": "CONVERGED",
+  "goal": "Improve readable and equivalent SQL rewrites on a fixed local corpus",
+  "baseline_commit": "4163662793c946c4cadda03e9552afaa57c0fffd",
+  "implementation_commit": "9dd9fa590fe5796320643ae595a742f344ac227b",
+  "budget": {
+    "max_experiments": 12,
+    "candidates": 3,
+    "kept": 2,
+    "revised_before_acceptance": 1
+  },
+  "acceptance": {
+    "minimum_coverage": 15,
+    "total_opportunities": 18,
+    "baseline_coverage": 6,
+    "final_coverage": 18,
+    "working_queries": 24,
+    "working_datasets": 32,
+    "working_comparisons": 768,
+    "holdout_queries": 12,
+    "holdout_datasets": 32,
+    "holdout_comparisons": 384,
+    "violations": 0,
+    "junit_tests": 159,
+    "junit_failures": 0,
+    "independent_review": "No material defect found in bounded read-only probes",
+    "root_readme_changed": false
+  },
+  "environment": {
+    "java": "Temurin 21.0.11",
+    "calcite": "1.42.0",
+    "python": "3.13",
+    "sqlite": "3.50.4"
+  },
+  "corpus_sha256": {
+    "working": "bfb7fae4ff3a9bb36fcc7b8746af8f6c0d2d1adfb14b5b1ad5e3afc75dbd39c9",
+    "holdout": "42d6697e25e62108c66fbc626a550784265393679dee2c6db3946e595888b517"
+  },
+  "reproduce_from_repository_root": [
+    "JAVA_HOME=<JDK-21> mvn -q -f demo/pom.xml package",
+    "JAVA_HOME=<JDK-21> python3 demo/evaluation/evaluate.py --suite working",
+    "JAVA_HOME=<JDK-21> python3 demo/evaluation/evaluate.py --suite holdout"
+  ],
+  "engine_issue": "Ambient Python differed between shell working directories. SQLite 3.53.0 failed an independent correlated-EXISTS/OFFSET witness; SQLite 3.50.4 passed. The evaluation runner refuses an engine that fails the witness rather than accepting its comparisons.",
+  "limits": [
+    "Handwritten fixed-schema corpus, not a public benchmark or a SOTA comparison.",
+    "Differential execution tests are not a formal proof for every possible database.",
+    "No PostgreSQL runtime or latency benchmark was run.",
+    "CTEs, nested query-block rewriting and arbitrary join graphs remain outside the rewrite scope.",
+    "Readability criteria are structural proxies, not a user study.",
+    "No deployment was performed."
+  ]
+}

@@ -1,0 +1,6 @@
+# metric_direction: higher_is_better
+iteration	commit	coverage	verification	outcome	description
+0	4163662	6/18	768 comparisons on 24 queries; 131 project tests	baseline	Existing implementation
+1	uncommitted	unknown	Pagination expectation failed	revise	Metadata alone did not establish the total order needed by LIMIT/OFFSET
+2	be3767e	15/18	145 project tests; 768 comparisons on SQLite 3.50.4	keep	Deterministic JOIN-to-EXISTS with expressions, boolean conditions and ordered pagination
+3	9dd9fa5	18/18	159 project tests; 768 working and 384 holdout comparisons	keep	Partial HAVING movement and two demonstration examples
