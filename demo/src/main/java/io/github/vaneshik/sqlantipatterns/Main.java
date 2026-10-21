@@ -24,6 +24,8 @@ public final class Main {
             Map.entry("/examples/redundant-distinct.sql", "text/plain; charset=utf-8"),
             Map.entry("/examples/distinct-group-by.sql", "text/plain; charset=utf-8"),
             Map.entry("/examples/group-filter.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/mixed-having.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/ordered-exists.sql", "text/plain; charset=utf-8"),
             Map.entry("/examples/null-comparison.sql", "text/plain; charset=utf-8"),
             Map.entry("/examples/null-filter.sql", "text/plain; charset=utf-8"),
             Map.entry("/examples/left-join-filter.sql", "text/plain; charset=utf-8"),
