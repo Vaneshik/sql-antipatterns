@@ -7,7 +7,6 @@ const finding = document.querySelector("#finding");
 const state = document.querySelector("#state");
 const tree = document.querySelector("#tree");
 const example = document.querySelector("#example");
-const optimization = document.querySelector("#optimization");
 const before = document.querySelector("#before");
 const after = document.querySelector("#after");
 let pending;
@@ -25,8 +24,10 @@ function clearResult(message) {
   pending = null;
   submit.disabled = false;
   result.hidden = true;
-  optimization.hidden = true;
+  before.disabled = true;
   after.disabled = true;
+  before.setAttribute("aria-pressed", "false");
+  after.setAttribute("aria-pressed", "false");
   analysis = null;
   finding.hidden = true;
   error.hidden = true;
@@ -34,6 +35,7 @@ function clearResult(message) {
   empty.querySelector("p").textContent = message;
   state.textContent = "Ожидание";
   document.querySelector("#node-count").textContent = "";
+  document.querySelector("#optimization-state").textContent = "";
 }
 
 function inspect(node, button) {
@@ -54,16 +56,16 @@ function inspect(node, button) {
   }
 }
 
-function render(data) {
-  analysis = data;
-  document.querySelector("#optimized-sql").value = data.optimized.sql;
+function render(data, submittedSql) {
+  analysis = { ...data, sql: submittedSql };
   document.querySelector("#optimization-state").textContent = data.optimized.changed ? "" : "План не изменился.";
-  optimization.hidden = false;
+  before.disabled = false;
   after.disabled = false;
-  showPlan(data);
+  showPlan(analysis);
 }
 
 function showPlan(data) {
+  sql.value = data.sql;
   before.setAttribute("aria-pressed", String(data === analysis));
   after.setAttribute("aria-pressed", String(data === analysis.optimized));
   const matches = data.rules.filter(rule => rule.status === "FOUND");
@@ -116,6 +118,7 @@ function showPlan(data) {
 }
 
 async function analyze() {
+  const submittedSql = sql.value;
   clearResult("Calcite строит логический план…");
   const request = new AbortController();
   pending = request;
@@ -124,12 +127,12 @@ async function analyze() {
   try {
     const response = await fetch("/api/analyze", {
       method: "POST", headers: { "Content-Type": "text/plain; charset=utf-8" },
-      body: sql.value, signal: request.signal
+      body: submittedSql, signal: request.signal
     });
     const data = await response.json();
     if (pending !== request) return;
     if (!response.ok) throw new Error(data.error);
-    render(data);
+    render(data, submittedSql);
   } catch (failure) {
     if (pending !== request) return;
     error.textContent = failure.message;

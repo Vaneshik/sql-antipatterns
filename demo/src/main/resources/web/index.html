@@ -54,16 +54,12 @@
             </div>
           </details>
       </section>
-      <section id="optimization" class="optimization" aria-labelledby="optimized-sql-title" hidden>
-        <h2 id="optimized-sql-title">SQL после преобразований</h2>
-        <textarea id="optimized-sql" aria-label="SQL после преобразований" readonly spellcheck="false"></textarea>
-        <p id="optimization-state"></p>
-      </section>
       <section class="plan" aria-labelledby="tree-title">
         <div class="section-heading"><h2 id="tree-title">Дерево RelNode</h2><span id="node-count"></span></div>
         <div class="plan-tabs" aria-label="Версия плана">
-          <button id="before" type="button" aria-pressed="true">До</button>
+          <button id="before" type="button" aria-pressed="false" disabled>До</button>
           <button id="after" type="button" aria-pressed="false" disabled>После</button>
+          <span id="optimization-state"></span>
         </div>
         <span id="state" role="status" class="sr-only"></span>
         <div id="empty" class="empty"><p>Постройте план, чтобы увидеть дерево.</p></div>
