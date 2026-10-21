@@ -71,7 +71,7 @@ function showPlan(data) {
   const matches = data.rules.filter(rule => rule.status === "FOUND");
   const matched = new Set(matches.flatMap(rule => rule.matchedNodeIds));
   let count = 0;
-  function branch(node) {
+  function branch(node, subqueryOperator) {
     count++;
     const item = element("li", undefined, matched.has(node.id) ? "matched" : "");
     const button = element("button", undefined, "node");
@@ -81,13 +81,15 @@ function showPlan(data) {
     const summary = Object.entries(node.attributes).map(([key, value]) => `${key}=${value}`).join(" · ");
     const label = node.type === "LogicalJoin" ? `${node.attributes.joinType.toUpperCase()} JOIN`
       : node.type.replace(/^Logical/, "");
-    button.append(element("strong", label), element("span", summary || "Нет атрибутов"));
+    button.append(element("strong", subqueryOperator ? `${subqueryOperator} → ${label}` : label),
+      element("span", summary || "Нет атрибутов"));
     button.title = summary;
     button.addEventListener("click", () => inspect(node, button));
     item.append(button);
-    if (node.inputs.length) {
+    if (node.inputs.length || node.subqueries.length) {
       const children = element("ul");
-      children.append(...node.inputs.map(branch));
+      children.append(...node.inputs.map(input => branch(input)),
+        ...node.subqueries.map(subquery => branch(subquery.plan, subquery.operator)));
       item.append(children);
     }
     return item;

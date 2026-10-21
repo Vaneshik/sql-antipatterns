@@ -18,6 +18,7 @@
           <select id="example" aria-label="Пример SQL">
             <optgroup label="Антипаттерны">
               <option value="distinct-join">DISTINCT после JOIN</option>
+              <option value="without-key">JOIN → EXISTS с сохранением DISTINCT</option>
               <option value="redundant-distinct">DISTINCT над уникальным входом</option>
               <option value="distinct-group-by">DISTINCT вместе с GROUP BY</option>
               <option value="group-filter">Фильтр по ключу группировки</option>
@@ -28,7 +29,6 @@
             </optgroup>
             <optgroup label="Контрпримеры">
               <option value="exists">EXISTS вместо JOIN</option>
-              <option value="without-key">DISTINCT без ключа</option>
               <option value="is-null">Проверка IS NULL</option>
               <option value="join-in-where">Связь таблиц в WHERE</option>
               <option value="having-count">HAVING по COUNT</option>

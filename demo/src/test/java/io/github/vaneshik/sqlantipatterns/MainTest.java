@@ -54,13 +54,15 @@ class MainTest {
         var optimized = result.path("optimized");
         assertTrue(optimized.path("changed").asBoolean());
         assertTrue(optimized.path("sql").asText().contains("EXISTS"));
-        assertTrue(optimized.path("plan").asText().contains("joinType=[semi]"));
+        assertTrue(optimized.path("plan").asText().contains("EXISTS"));
+        assertEquals(1, optimized.path("tree").path("inputs").get(0).path("subqueries").size());
         assertFalse(optimized.path("tree").path("type").asText().isBlank());
         assertTrue(response.headers().firstValue("Content-Type").orElseThrow().contains("application/json"));
     }
 
     @ParameterizedTest
     @CsvSource({
+            "without-key, distinct-join-keep-distinct",
             "redundant-distinct, redundant-distinct", "distinct-group-by, redundant-distinct",
             "group-filter, group-filter", "null-comparison, null-comparison",
             "null-filter, false-filter",

@@ -6,8 +6,6 @@ import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.avatica.util.Quoting;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.plan.Strong;
-import org.apache.calcite.plan.hep.HepPlanner;
-import org.apache.calcite.plan.hep.HepProgramBuilder;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Aggregate;
 import org.apache.calcite.rel.core.Filter;
@@ -15,9 +13,6 @@ import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rel.core.TableScan;
-import org.apache.calcite.rel.rel2sql.RelToSqlConverter;
-import org.apache.calcite.rel.rules.CoreRules;
-import org.apache.calcite.rel.rules.FilterAggregateTransposeRule;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
@@ -30,7 +25,6 @@ import org.apache.calcite.sql.SqlJoin;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlSelect;
-import org.apache.calcite.sql.dialect.PostgresqlSqlDialect;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
@@ -81,43 +75,23 @@ public final class Analyzer {
             String plan = RelOptUtil.toString(rel);
             PlanNode tree = PlanNode.from(rel);
             List<RuleResult> rules = checkRules(original, rel);
+            SqlNode rewritten = SqlParser.create(statement, parserConfig).parseQuery();
             RelNode optimized = rel;
-            if (rules.getFirst().status() == Status.FOUND) {
-                Aggregate aggregate = (Aggregate) rel;
-                Project project = (Project) aggregate.getInput();
-                RelNode input = project.getInput();
-                List<RexNode> conditions = new ArrayList<>();
-                if (input instanceof Filter filter) {
-                    conditions.add(filter.getCondition());
-                    input = filter.getInput();
-                }
-                Join join = (Join) input;
-                conditions.add(join.getCondition());
-                RelNode semiJoin = join.copy(join.getTraitSet(),
-                        RexUtil.composeConjunction(rel.getCluster().getRexBuilder(), conditions),
-                        join.getLeft(), join.getRight(), JoinRelType.SEMI, false);
-                optimized = project.copy(project.getTraitSet(), semiJoin, project.getProjects(), project.getRowType());
+            List<RuleResult> optimizedRules = rules;
+            String optimizedSql = sql;
+            boolean changed = false;
+            while (SqlRewrite.apply(rewritten, optimized, optimizedRules)) {
+                String rewrittenStatement = SqlRewrite.format(rewritten);
+                optimizedSql = rewrittenStatement + ";";
+                planner.close();
+                planner.reset();
+                SqlNode rewrittenValidated = planner.validate(planner.parse(rewrittenStatement));
+                optimized = planner.rel(rewrittenValidated).project();
+                optimizedRules = checkRules(rewritten, optimized);
+                changed = true;
             }
-            var program = new HepProgramBuilder()
-                    .addRuleInstance(CoreRules.AGGREGATE_REMOVE)
-                    .addRuleInstance(FilterAggregateTransposeRule.Config.DEFAULT.withOperandSupplier(b ->
-                            b.operand(Filter.class)
-                                    .predicate(filter -> RexUtil.isDeterministic(filter.getCondition()))
-                                    .oneInput(a -> a.operand(Aggregate.class).anyInputs()))
-                            .as(FilterAggregateTransposeRule.Config.class).toRule())
-                    .addRuleInstance(CoreRules.FILTER_INTO_JOIN)
-                    .addRuleInstance(CoreRules.FILTER_REDUCE_EXPRESSIONS)
-                    .addRuleInstance(CoreRules.PROJECT_REDUCE_EXPRESSIONS)
-                    .build();
-            HepPlanner optimizer = new HepPlanner(program);
-            optimizer.setRoot(optimized);
-            optimized = optimizer.findBestExp();
-            String optimizedPlan = RelOptUtil.toString(optimized);
-            String optimizedSql = new RelToSqlConverter(PostgresqlSqlDialect.DEFAULT)
-                    .visitRoot(optimized).asStatement().toSqlString(PostgresqlSqlDialect.DEFAULT).getSql();
-            SqlNode optimizedOriginal = SqlParser.create(optimizedSql, parserConfig).parseQuery();
-            return new Result(plan, tree, rules, new Optimization(optimizedSql, optimizedPlan,
-                    PlanNode.from(optimized), checkRules(optimizedOriginal, optimized), !plan.equals(optimizedPlan)));
+            return new Result(plan, tree, rules, new Optimization(optimizedSql, RelOptUtil.toString(optimized),
+                    PlanNode.from(optimized), optimizedRules, changed));
         }
     }
 
@@ -197,11 +171,6 @@ public final class Analyzer {
             projectedColumns.set(ref.getIndex());
         }
         ImmutableBitSet columns = projectedColumns.build();
-        if (!left.getTable().isKey(columns)) {
-            return new RuleResult(Status.NOT_FOUND,
-                    "В проекции нет ключа левой таблицы. Удаление DISTINCT может изменить "
-                            + "число одинаковых строк; совет заменить соединение на EXISTS не выдаётся.", "");
-        }
         if (right.getTable().isKey(rightJoinColumns.build())) {
             return new RuleResult(Status.NOT_FOUND,
                     "Соединение идёт по ключу правой таблицы и не размножает строки левой.", "");
@@ -209,6 +178,14 @@ public final class Analyzer {
         List<Integer> matchedNodeIds = project.getInput() instanceof Filter filter
                 ? List.of(aggregate.getId(), project.getId(), filter.getId(), join.getId())
                 : List.of(aggregate.getId(), project.getId(), join.getId());
+        if (!left.getTable().isKey(columns)) {
+            return new RuleResult("distinct-join-keep-distinct", "JOIN с сохранением DISTINCT",
+                    "Aggregate → Project → [Filter] → Join", Status.FOUND,
+                    "JOIN используется для проверки существования строк. В проекции нет ключа: "
+                            + "разные строки левой таблицы могут дать одинаковый результат.",
+                    "Замените JOIN на EXISTS. Сохраните DISTINCT, чтобы не изменить число дублей.",
+                    matchedNodeIds);
+        }
         return new RuleResult("distinct-join", "DISTINCT после JOIN",
                 "Aggregate → Project → [Filter] → Join", Status.FOUND,
                 "INNER JOIN может размножать строки левой таблицы, а DISTINCT удаляет копии. "
@@ -318,9 +295,9 @@ public final class Analyzer {
                 java.util.Arrays.stream(nodes).map(RelNode::getId).toList());
     }
 
-    private static boolean isBaseTable(SqlNode node) {
-        if (node.getKind() == SqlKind.AS) {
-            node = ((SqlCall) node).operand(0);
+    static boolean isBaseTable(SqlNode node) {
+        if (node instanceof SqlCall call && call.getKind() == SqlKind.AS) {
+            node = call.operand(0);
         }
         return node instanceof SqlIdentifier;
     }
