@@ -82,13 +82,13 @@ public final class Analyzer {
             List<RuleResult> optimizedRules = rules;
             String optimizedSql = sql;
             boolean changed = false;
-            while (SqlRewrite.apply(rewritten, optimized, optimizedRules)) {
+            while (SqlRewrite.apply(rewritten, validated, optimized, optimizedRules)) {
                 String rewrittenStatement = SqlRewrite.format(rewritten);
                 optimizedSql = rewrittenStatement + ";";
                 planner.close();
                 planner.reset();
-                SqlNode rewrittenValidated = planner.validate(planner.parse(rewrittenStatement));
-                optimized = planner.rel(rewrittenValidated).project();
+                validated = planner.validate(planner.parse(rewrittenStatement));
+                optimized = planner.rel(validated).project();
                 optimizedRules = checkRules(rewritten, optimized);
                 changed = true;
             }
@@ -249,12 +249,15 @@ public final class Analyzer {
             if (filter.getInput() instanceof Aggregate aggregate
                     && aggregate.getGroupType() == Aggregate.Group.SIMPLE
                     && aggregate.getGroupCount() > 0
-                    && RexUtil.isDeterministic(filter.getCondition())) {
-                ImmutableBitSet columns = RelOptUtil.InputFinder.bits(filter.getCondition());
-                if (!columns.isEmpty() && ImmutableBitSet.range(aggregate.getGroupCount()).contains(columns)) {
+                    && deterministicScalar(filter.getCondition())) {
+                boolean movable = RelOptUtil.conjunctions(filter.getCondition()).stream().anyMatch(predicate -> {
+                    ImmutableBitSet columns = RelOptUtil.InputFinder.bits(predicate);
+                    return !columns.isEmpty() && ImmutableBitSet.range(aggregate.getGroupCount()).contains(columns);
+                });
+                if (movable) {
                     rules.add(matched("group-filter", "Фильтр после группировки", "Filter → Aggregate",
-                            "Условие зависит только от ключей группировки и может отсеивать строки до агрегации.",
-                            "Перенесите это условие из HAVING в WHERE.", filter, aggregate));
+                            "Часть HAVING зависит только от ключей группировки и может отсеивать строки до агрегации.",
+                            "Перенесите условия по ключам в WHERE, сохранив условия по агрегатам в HAVING.", filter, aggregate));
                 }
             }
             if (filter.getInput() instanceof Join join && join.getJoinType() == JoinRelType.LEFT

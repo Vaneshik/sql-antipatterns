@@ -35,7 +35,8 @@ class OptimizationTest {
     @ValueSource(strings = {
             "distinct-join", "exists", "without-key", "redundant-distinct", "distinct-group-by",
             "group-filter", "having-count", "null-comparison", "null-filter", "is-null",
-            "left-join-filter", "left-join-is-null", "cartesian-product", "join-in-where"
+            "left-join-filter", "left-join-is-null", "cartesian-product", "join-in-where",
+            "ordered-exists", "mixed-having"
     })
     void generatedSqlPreservesRowsDuplicatesNullsAndColumnNames(String example) throws Exception {
         String sql = Files.readString(Path.of("examples", example + ".sql"));
@@ -216,6 +217,43 @@ class OptimizationTest {
             "SELECT DISTINCT c.id, ROW_NUMBER() OVER (ORDER BY c.id) AS n FROM customer c JOIN orders o ON o.customer_id = c.id"
     })
     void preservesEvaluationFrequencyAndAmbiguousPagination(String sql) throws Exception {
+        assertEquals(sql, analyzer.analyze(sql).optimized().sql());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "SELECT customer_id, COUNT(*) AS n FROM orders GROUP BY customer_id HAVING customer_id > 2 AND COUNT(*) > 1",
+            "SELECT customer_id, COUNT(*) AS n FROM orders GROUP BY customer_id HAVING customer_id IS NOT NULL AND COUNT(*) > 1",
+            "SELECT customer_id, COUNT(*) AS n FROM orders GROUP BY customer_id HAVING (customer_id = 1 OR customer_id = 2) AND COUNT(*) > 1",
+            "SELECT customer_id, SUM(id) AS total FROM orders o GROUP BY o.customer_id HAVING customer_id > 2 AND SUM(id) > 100",
+            "SELECT UPPER(status) AS status, COUNT(*) AS n FROM orders GROUP BY UPPER(status) HAVING UPPER(status) = 'PAID' AND COUNT(*) > 1"
+    })
+    void movesOnlyGroupKeyConjunctsAndPreservesAggregateConditions(String sql) throws Exception {
+        var optimized = analyzer.analyze(sql).optimized();
+        assertTrue(optimized.changed(), optimized.sql());
+        assertTrue(optimized.sql().contains("WHERE"), optimized.sql());
+        assertTrue(optimized.sql().contains("HAVING"), optimized.sql());
+        var rebuilt = analyzer.analyze(optimized.sql());
+        assertEquals(optimized.plan(), rebuilt.plan());
+        assertFalse(rebuilt.optimized().changed(), optimized.sql());
+        try (Connection connection = database()) {
+            QueryResult before = execute(connection, sql);
+            QueryResult after = execute(connection, optimized.sql());
+            assertEquals(before.columns(), after.columns());
+            assertEquals(before.rows().stream().collect(Collectors.groupingBy(row -> row, Collectors.counting())),
+                    after.rows().stream().collect(Collectors.groupingBy(row -> row, Collectors.counting())));
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "SELECT customer_id, COUNT(*) AS n FROM orders GROUP BY customer_id HAVING customer_id > 2 OR COUNT(*) > 1",
+            "SELECT customer_id, COUNT(*) AS n FROM orders GROUP BY customer_id HAVING customer_id > 2 AND RAND() > 0.5",
+            "SELECT COUNT(*) AS n FROM orders HAVING FALSE",
+            "SELECT customer_id, COUNT(*) AS n FROM orders GROUP BY GROUPING SETS ((customer_id), ()) HAVING customer_id > 2",
+            "SELECT COALESCE(RAND(), 0) AS r, COUNT(*) AS n FROM orders GROUP BY COALESCE(RAND(), 0) HAVING COALESCE(RAND(), 0) > 0.5"
+    })
+    void keepsHavingWhenMovingItChangesGroupsOrEvaluation(String sql) throws Exception {
         assertEquals(sql, analyzer.analyze(sql).optimized().sql());
     }
 

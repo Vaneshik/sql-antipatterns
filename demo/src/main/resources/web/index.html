@@ -18,10 +18,12 @@
           <select id="example" aria-label="Пример SQL">
             <optgroup label="Антипаттерны">
               <option value="distinct-join">DISTINCT после JOIN</option>
+              <option value="ordered-exists">DISTINCT + JOIN с ORDER BY и LIMIT</option>
               <option value="without-key">JOIN → EXISTS с сохранением DISTINCT</option>
               <option value="redundant-distinct">DISTINCT над уникальным входом</option>
               <option value="distinct-group-by">DISTINCT вместе с GROUP BY</option>
               <option value="group-filter">Фильтр по ключу группировки</option>
+              <option value="mixed-having">HAVING по ключу и агрегату</option>
               <option value="null-comparison">Сравнение с NULL</option>
               <option value="null-filter">Всегда ложный фильтр: WHERE name = NULL</option>
               <option value="left-join-filter">Фильтр после LEFT JOIN</option>

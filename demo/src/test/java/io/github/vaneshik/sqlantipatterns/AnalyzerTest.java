@@ -222,7 +222,7 @@ class AnalyzerTest {
                         "SELECT DISTINCT COUNT(*) FROM orders GROUP BY customer_id"),
                 Arguments.of("group-filter",
                         "SELECT customer_id, COUNT(*) FROM orders GROUP BY customer_id "
-                                + "HAVING customer_id > 10 AND COUNT(*) > 1"),
+                                + "HAVING customer_id > 10 OR COUNT(*) > 1"),
                 Arguments.of("group-filter", "SELECT COUNT(*) FROM orders HAVING COUNT(*) > 1"),
                 Arguments.of("group-filter",
                         "SELECT customer_id, COUNT(*) FROM orders GROUP BY GROUPING SETS ((customer_id), ()) "

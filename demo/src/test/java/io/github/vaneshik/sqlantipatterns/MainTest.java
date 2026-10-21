@@ -65,6 +65,7 @@ class MainTest {
             "without-key, distinct-join-keep-distinct",
             "redundant-distinct, redundant-distinct", "distinct-group-by, redundant-distinct",
             "group-filter, group-filter", "null-comparison, null-comparison",
+            "ordered-exists, distinct-join", "mixed-having, group-filter",
             "null-filter, false-filter",
             "left-join-filter, left-join-filter", "cartesian-product, cartesian-product",
             "is-null, none", "join-in-where, none", "having-count, none", "left-join-is-null, none"
