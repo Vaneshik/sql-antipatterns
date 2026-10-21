@@ -13,6 +13,7 @@ import org.apache.calcite.sql.SqlNodeList;
 import org.apache.calcite.sql.SqlOrderBy;
 import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.SqlSelectKeyword;
+import org.apache.calcite.sql.SqlWriter;
 import org.apache.calcite.sql.dialect.PostgresqlSqlDialect;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.pretty.SqlPrettyWriter;
@@ -81,7 +82,12 @@ final class SqlRewrite {
 
     static String format(SqlNode query) {
         return new SqlPrettyWriter(SqlPrettyWriter.config()
-                .withDialect(PostgresqlSqlDialect.DEFAULT)
+                .withDialect(new PostgresqlSqlDialect(PostgresqlSqlDialect.DEFAULT_CONTEXT) {
+                    @Override
+                    public void unparseOffsetFetch(SqlWriter writer, SqlNode offset, SqlNode fetch) {
+                        unparseFetchUsingLimit(writer, offset, fetch);
+                    }
+                })
                 .withQuoteAllIdentifiers(false)
                 .withIndentation(2)
                 .withSelectListItemsOnSeparateLines(false)

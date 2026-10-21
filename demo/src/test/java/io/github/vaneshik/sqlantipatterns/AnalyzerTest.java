@@ -108,12 +108,11 @@ class AnalyzerTest {
     @ValueSource(strings = {
             "SELECT DISTINCT c.id, o.status FROM customer c JOIN orders o ON c.id = o.customer_id",
             "SELECT DISTINCT c.id, o.status FROM customer c JOIN orders o ON c.id = o.id",
-            "SELECT DISTINCT c.id, UPPER(c.name) FROM customer c JOIN orders o ON c.id = o.customer_id",
+            "SELECT DISTINCT c.id, RAND() FROM customer c JOIN orders o ON c.id = o.customer_id",
             "SELECT DISTINCT c.id FROM customer c LEFT JOIN orders o ON c.id = o.customer_id",
             "SELECT DISTINCT c.id FROM customer c RIGHT JOIN orders o ON c.id = o.customer_id",
             "SELECT DISTINCT c.id FROM customer c FULL JOIN orders o ON c.id = o.customer_id",
             "SELECT DISTINCT c.id FROM customer c CROSS JOIN orders o",
-            "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id < o.customer_id",
             "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id = c.id",
             "SELECT DISTINCT c.id FROM customer c JOIN orders o ON TRUE",
             "SELECT DISTINCT c.id FROM customer c JOIN customer b ON c.id = b.id",
@@ -123,13 +122,13 @@ class AnalyzerTest {
                     + "JOIN (SELECT * FROM orders) o ON c.id = o.customer_id",
             "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id = o.customer_id LIMIT 1",
             "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id = o.customer_id OFFSET 1",
-            "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id = o.customer_id ORDER BY c.id",
+            "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON c.id = o.customer_id ORDER BY c.name LIMIT 2",
             "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id = o.customer_id GROUP BY c.id",
             "SELECT c.id FROM customer c JOIN orders o ON c.id = o.customer_id GROUP BY c.id",
             "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id = o.customer_id "
-                    + "WHERE o.status = 'paid' OR o.status = 'new'",
+                    + "WHERE RAND() > 0.5",
             "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id = o.customer_id "
-                    + "WHERE UPPER(o.status) = 'PAID'",
+                    + "WHERE o.id IN (SELECT id FROM orders)",
             "SELECT DISTINCT c.id, ROW_NUMBER() OVER (ORDER BY c.id) FROM customer c "
                     + "JOIN orders o ON c.id = o.customer_id",
             "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id = o.customer_id "

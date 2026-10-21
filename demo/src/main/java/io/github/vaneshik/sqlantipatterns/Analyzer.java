@@ -12,11 +12,12 @@ import org.apache.calcite.rel.core.Filter;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.core.Project;
+import org.apache.calcite.rel.core.Sort;
 import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexInputRef;
-import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.rex.RexOver;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.sql.JoinConditionType;
 import org.apache.calcite.sql.SqlCall;
@@ -24,6 +25,7 @@ import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlJoin;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.SqlOrderBy;
 import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
@@ -104,15 +106,17 @@ public final class Analyzer {
     }
 
     private static RuleResult distinctJoin(SqlNode original, RelNode rel) {
+        if (original instanceof SqlOrderBy orderBy) {
+            original = orderBy.query;
+        }
         if (!(original instanceof SqlSelect select)) {
             return new RuleResult(Status.UNSUPPORTED,
-                    "Поддерживается один SELECT без ORDER BY, CTE и операций над множествами.", "");
+                    "Поддерживается один SELECT без CTE и операций над множествами.", "");
         }
         if (select.getGroup() != null || select.getHaving() != null
-                || !select.getWindowList().isEmpty()
-                || select.getFetch() != null || select.getOffset() != null) {
+                || !select.getWindowList().isEmpty()) {
             return new RuleResult(Status.UNSUPPORTED,
-                    "GROUP BY, HAVING, окна и LIMIT/OFFSET пока не поддерживаются.", "");
+                    "GROUP BY, HAVING и окна пока не поддерживаются.", "");
         }
         if (!select.isDistinct()) {
             return new RuleResult(Status.NOT_FOUND, "", "");
@@ -124,6 +128,13 @@ public final class Analyzer {
             return new RuleResult(Status.UNSUPPORTED,
                     "Для этого правила нужен один INNER JOIN базовых таблиц с условием ON.", "");
         }
+        Sort pagination = null;
+        while (rel instanceof Project || rel instanceof Sort) {
+            if (rel instanceof Sort sort && (sort.fetch != null || sort.offset != null)) {
+                pagination = sort;
+            }
+            rel = rel.getInput(0);
+        }
         if (!(rel instanceof Aggregate aggregate)
                 || !aggregate.getAggCallList().isEmpty()
                 || !(aggregate.getInput() instanceof Project project)) {
@@ -132,9 +143,9 @@ public final class Analyzer {
         }
         RelNode input = project.getInput();
         if (input instanceof Filter filter) {
-            if (!simplePredicate(filter.getCondition())) {
+            if (!deterministicScalar(filter.getCondition())) {
                 return new RuleResult(Status.UNSUPPORTED,
-                        "Поддерживаются только сравнения колонок и констант, соединённые AND.", "");
+                        "Условия с окнами, подзапросами и недетерминированными функциями не переносятся.", "");
             }
             input = filter.getInput();
         }
@@ -147,30 +158,53 @@ public final class Analyzer {
                     "Нужен один INNER JOIN двух разных базовых таблиц.", "");
         }
         int leftWidth = left.getRowType().getFieldCount();
+        if (!deterministicScalar(join.getCondition())
+                || !RelOptUtil.InputFinder.bits(join.getCondition()).intersects(ImmutableBitSet.range(leftWidth))
+                || !RelOptUtil.InputFinder.bits(join.getCondition()).intersects(
+                        ImmutableBitSet.range(leftWidth, join.getRowType().getFieldCount()))) {
+            return new RuleResult(Status.UNSUPPORTED,
+                    "Нужно детерминированное условие ON, связывающее обе стороны соединения.", "");
+        }
         ImmutableBitSet.Builder rightJoinColumns = ImmutableBitSet.builder();
         for (RexNode condition : RelOptUtil.conjunctions(join.getCondition())) {
-            if (!(condition instanceof RexCall call) || call.getKind() != SqlKind.EQUALS
-                    || !(call.operands.get(0) instanceof RexInputRef first)
-                    || !(call.operands.get(1) instanceof RexInputRef second)
-                    || (first.getIndex() < leftWidth) == (second.getIndex() < leftWidth)) {
-                return new RuleResult(Status.UNSUPPORTED,
-                        "ON должен сравнивать колонки разных сторон через равенство.", "");
+            if (condition instanceof RexCall call && call.getKind() == SqlKind.EQUALS
+                    && call.operands.get(0) instanceof RexInputRef first
+                    && call.operands.get(1) instanceof RexInputRef second
+                    && (first.getIndex() < leftWidth) != (second.getIndex() < leftWidth)) {
+                rightJoinColumns.set(Math.max(first.getIndex(), second.getIndex()) - leftWidth);
             }
-            rightJoinColumns.set(Math.max(first.getIndex(), second.getIndex()) - leftWidth);
-        }
-        if (rightJoinColumns.isEmpty()) {
-            return new RuleResult(Status.UNSUPPORTED,
-                    "ON должен сравнивать колонки разных сторон через равенство.", "");
         }
         ImmutableBitSet.Builder projectedColumns = ImmutableBitSet.builder();
         for (RexNode column : project.getProjects()) {
-            if (!(column instanceof RexInputRef ref) || ref.getIndex() >= leftWidth) {
+            if (!deterministicScalar(column)
+                    || !ImmutableBitSet.range(leftWidth).contains(RelOptUtil.InputFinder.bits(column))) {
                 return new RuleResult(Status.UNSUPPORTED,
-                        "В SELECT допускаются только прямые колонки левой таблицы.", "");
+                        "В SELECT допускаются детерминированные выражения только от левой таблицы.", "");
             }
-            projectedColumns.set(ref.getIndex());
+            if (column instanceof RexInputRef ref) {
+                projectedColumns.set(ref.getIndex());
+            }
         }
         ImmutableBitSet columns = projectedColumns.build();
+        if (pagination != null) {
+            if (pagination.getInput() != aggregate) {
+                return new RuleResult(Status.UNSUPPORTED,
+                        "Для LIMIT/OFFSET нужен ORDER BY непосредственно над результатом DISTINCT.", "");
+            }
+            ImmutableBitSet orderColumns = ImmutableBitSet.of(pagination.getCollation().getKeys());
+            ImmutableBitSet.Builder orderedLeftColumns = ImmutableBitSet.builder();
+            for (int index : orderColumns) {
+                if (project.getProjects().get(index) instanceof RexInputRef ref) {
+                    orderedLeftColumns.set(ref.getIndex());
+                }
+            }
+            if (orderColumns.isEmpty()
+                    || !(orderColumns.contains(ImmutableBitSet.range(aggregate.getGroupCount()))
+                        || left.getTable().isKey(orderedLeftColumns.build()))) {
+                return new RuleResult(Status.UNSUPPORTED,
+                        "Для LIMIT/OFFSET нужен ORDER BY, однозначно определяющий порядок результата.", "");
+            }
+        }
         if (right.getTable().isKey(rightJoinColumns.build())) {
             return new RuleResult(Status.NOT_FOUND,
                     "Соединение идёт по ключу правой таблицы и не размножает строки левой.", "");
@@ -302,23 +336,9 @@ public final class Analyzer {
         return node instanceof SqlIdentifier;
     }
 
-    private static boolean simplePredicate(RexNode predicate) {
-        for (RexNode part : RelOptUtil.conjunctions(predicate)) {
-            if (!(part instanceof RexCall call)) {
-                return false;
-            }
-            if (!List.of(SqlKind.EQUALS, SqlKind.NOT_EQUALS, SqlKind.LESS_THAN,
-                    SqlKind.LESS_THAN_OR_EQUAL, SqlKind.GREATER_THAN,
-                    SqlKind.GREATER_THAN_OR_EQUAL, SqlKind.IS_NULL, SqlKind.IS_NOT_NULL)
-                    .contains(call.getKind())) {
-                return false;
-            }
-            for (RexNode operand : call.operands) {
-                if (!(operand instanceof RexInputRef) && !(operand instanceof RexLiteral)) {
-                    return false;
-                }
-            }
-        }
-        return true;
+    private static boolean deterministicScalar(RexNode expression) {
+        return RexUtil.isDeterministic(expression)
+                && RexUtil.SubQueryFinder.find(expression) == null
+                && !RexOver.containsOver(expression);
     }
 }

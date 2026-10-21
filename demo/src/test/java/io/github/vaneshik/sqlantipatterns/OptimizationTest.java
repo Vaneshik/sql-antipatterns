@@ -176,6 +176,51 @@ class OptimizationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
+            "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON o.customer_id = c.id ORDER BY c.id DESC",
+            "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON o.customer_id = c.id ORDER BY c.id LIMIT 3 OFFSET 1",
+            "SELECT DISTINCT c.name FROM customer c JOIN orders o ON o.customer_id = c.id ORDER BY c.name",
+            "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON o.customer_id = c.id WHERE o.status = 'paid' OR o.status IS NULL",
+            "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON o.customer_id = c.id WHERE UPPER(o.status) = 'PAID'",
+            "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON o.customer_id = c.id AND o.status = 'paid'",
+            "SELECT DISTINCT c.id, UPPER(c.name) AS display_name FROM customer c JOIN orders o ON o.customer_id = c.id",
+            "SELECT DISTINCT UPPER(c.name) AS display_name FROM customer c JOIN orders o ON o.customer_id = c.id",
+            "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON o.customer_id > c.id"
+    })
+    void rewritesExistenceChecksWithExpressionsAndOrderingWithoutChangingResults(String sql) throws Exception {
+        var optimized = analyzer.analyze(sql).optimized();
+        assertTrue(optimized.changed(), optimized.sql());
+        assertTrue(optimized.sql().contains("EXISTS"), optimized.sql());
+        assertFalse(optimized.sql().contains("JOIN"), optimized.sql());
+        var rebuilt = analyzer.analyze(optimized.sql());
+        assertEquals(optimized.plan(), rebuilt.plan());
+        assertFalse(rebuilt.optimized().changed(), optimized.sql());
+        try (Connection connection = database()) {
+            QueryResult before = execute(connection, sql);
+            QueryResult after = execute(connection, optimized.sql());
+            assertEquals(before.columns(), after.columns());
+            assertEquals(before.rows().stream().collect(Collectors.groupingBy(row -> row, Collectors.counting())),
+                    after.rows().stream().collect(Collectors.groupingBy(row -> row, Collectors.counting())));
+            if (sql.contains("ORDER BY")) {
+                assertEquals(before.rows(), after.rows(), optimized.sql());
+            }
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "SELECT DISTINCT c.id, RAND() AS sample FROM customer c JOIN orders o ON o.customer_id = c.id",
+            "SELECT DISTINCT c.id FROM customer c JOIN orders o ON o.customer_id = c.id WHERE RAND() > 0.5",
+            "SELECT DISTINCT c.id FROM customer c JOIN orders o ON o.customer_id = c.id AND RAND() > 0.5",
+            "SELECT DISTINCT c.id FROM customer c JOIN orders o ON o.customer_id = c.id LIMIT 2",
+            "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON o.customer_id = c.id ORDER BY c.name LIMIT 2",
+            "SELECT DISTINCT c.id, ROW_NUMBER() OVER (ORDER BY c.id) AS n FROM customer c JOIN orders o ON o.customer_id = c.id"
+    })
+    void preservesEvaluationFrequencyAndAmbiguousPagination(String sql) throws Exception {
+        assertEquals(sql, analyzer.analyze(sql).optimized().sql());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
             "SELECT name FROM customer ORDER BY id DESC FETCH NEXT 4 ROWS ONLY",
             "SELECT name AS person, id AS customer_number FROM customer ORDER BY id",
             "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON c.id = o.id ORDER BY c.id",
