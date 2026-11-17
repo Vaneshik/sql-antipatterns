@@ -9,6 +9,7 @@ import org.eclipse.core.runtime.IStatus;
 import org.eclipse.core.runtime.Status;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.dialogs.MessageDialog;
+import org.eclipse.ui.IWorkbenchWindow;
 import org.eclipse.ui.handlers.HandlerUtil;
 import org.jkiss.dbeaver.model.exec.DBCExecutionPurpose;
 import org.jkiss.dbeaver.model.exec.jdbc.JDBCSession;
@@ -18,9 +19,17 @@ import org.jkiss.dbeaver.ui.editors.sql.SQLEditor;
 public final class AnalyzeHandler extends AbstractHandler {
     @Override
     public Object execute(ExecutionEvent event) {
-        var window = HandlerUtil.getActiveWorkbenchWindow(event);
-        if (window == null || !(window.getActivePage().getActiveEditor() instanceof SQLEditor editor)) {
-            return null;
+        analyze(HandlerUtil.getActiveWorkbenchWindow(event));
+        return null;
+    }
+
+    static void analyze(IWorkbenchWindow window) {
+        if (window == null) {
+            return;
+        }
+        if (!(window.getActivePage().getActiveEditor() instanceof SQLEditor editor)) {
+            MessageDialog.openInformation(window.getShell(), "SQL-антипаттерны", "Откройте SQL-редактор с подключением PostgreSQL.");
+            return;
         }
         try {
             var source = EditorSnapshot.capture(editor);
@@ -70,11 +79,9 @@ public final class AnalyzeHandler extends AbstractHandler {
                 }
             };
             view.setAnalysisJob(job);
-            job.setUser(true);
             job.schedule();
         } catch (Exception exception) {
             MessageDialog.openError(window.getShell(), "SQL-антипаттерны", exception.getMessage());
         }
-        return null;
     }
 }

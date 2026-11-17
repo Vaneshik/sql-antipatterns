@@ -45,6 +45,8 @@ def main():
     parser.add_argument("--maven-repo", type=Path)
     args = parser.parse_args()
     here = Path(__file__).resolve().parent
+    version = next(line.split(":", 1)[1].strip() for line in (here / "META-INF/MANIFEST.MF").read_text().splitlines()
+                   if line.startswith("Bundle-Version:"))
     platform = args.dbeaver_home.resolve()
     java_home = Path(os.environ["JAVA_HOME"])
     target = here / "target"
@@ -66,18 +68,20 @@ def main():
     if repository.exists():
         shutil.rmtree(repository)
     staging = target / "staging"
+    if staging.exists():
+        shutil.rmtree(staging)
     plugins = staging / "plugins"
     features = staging / "features"
     plugins.mkdir(parents=True, exist_ok=True)
     features.mkdir(exist_ok=True)
-    bundle = plugins / "io.github.vaneshik.sqlantipatterns.dbeaver_0.1.0.jar"
+    bundle = plugins / f"io.github.vaneshik.sqlantipatterns.dbeaver_{version}.jar"
     with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.write(here / "META-INF/MANIFEST.MF", "META-INF/MANIFEST.MF")
         archive.write(here / "plugin.xml", "plugin.xml")
         archive.write(engine, "lib/sql-analysis.jar")
         for file in sorted(classes.rglob("*.class")):
             archive.write(file, file.relative_to(classes))
-    with zipfile.ZipFile(features / "io.github.vaneshik.sqlantipatterns.feature_0.1.0.jar", "w") as archive:
+    with zipfile.ZipFile(features / f"io.github.vaneshik.sqlantipatterns.feature_{version}.jar", "w") as archive:
         archive.write(here / "feature.xml", "feature.xml")
     config = target / "publisher-configuration"
     configuration(platform, config)
@@ -90,7 +94,7 @@ def main():
     for filename in ("content.jar", "artifacts.jar"):
         if not (repository / filename).is_file():
             raise RuntimeError(f"p2 publisher did not create {filename}")
-    archive = shutil.make_archive(str(target / "sql-antipatterns-0.1.0"), "zip", repository)
+    archive = shutil.make_archive(str(target / f"sql-antipatterns-{version}"), "zip", repository)
     print(f"Install in DBeaver using Help > Install New Software > Add > Archive\n{archive}")
 
 

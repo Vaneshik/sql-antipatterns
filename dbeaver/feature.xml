@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <feature id="io.github.vaneshik.sqlantipatterns.feature" label="SQL Antipatterns for DBeaver"
-         version="0.1.0" provider-name="Vaneshik">
+         version="0.1.1" provider-name="Vaneshik">
   <description>Анализ логического плана PostgreSQL с Apache Calcite, объяснения и исправления SQL.</description>
-  <plugin id="io.github.vaneshik.sqlantipatterns.dbeaver" version="0.1.0"
+  <plugin id="io.github.vaneshik.sqlantipatterns.dbeaver" version="0.1.1"
           download-size="0" install-size="0" unpack="false"/>
 </feature>

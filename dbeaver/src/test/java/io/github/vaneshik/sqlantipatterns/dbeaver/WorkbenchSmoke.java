@@ -9,13 +9,17 @@ import org.eclipse.swt.SWT;
 import org.eclipse.swt.widgets.Button;
 import org.eclipse.swt.widgets.Composite;
 import org.eclipse.swt.widgets.Control;
+import org.eclipse.swt.widgets.Combo;
 import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Label;
+import org.eclipse.swt.widgets.Link;
+import org.eclipse.swt.widgets.TabFolder;
 import org.eclipse.swt.widgets.Table;
 import org.eclipse.swt.widgets.Tree;
 import org.eclipse.swt.graphics.GC;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.graphics.ImageLoader;
+import org.eclipse.swt.custom.StyledText;
 import org.eclipse.ui.IStartup;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.handlers.IHandlerService;
@@ -32,11 +36,12 @@ import org.jkiss.dbeaver.ui.editors.StringEditorInput;
 import org.jkiss.dbeaver.ui.editors.sql.SQLEditor;
 
 public final class WorkbenchSmoke implements IStartup {
-    private static final String SQL = "SELECT DISTINCT c.id, c.name FROM smoke_customer c "
-            + "JOIN smoke_orders o ON c.id = o.customer_id WHERE o.status = 'paid'";
+    private static final String SQL = "SELECT DISTINCT c.id, c.name\nFROM smoke_customer c\n"
+            + "JOIN smoke_orders o ON c.id = o.customer_id\nWHERE o.status = 'paid'";
     private SQLEditor editor;
     private String script;
     private long deadline;
+    private int phase;
 
     @Override
     public void earlyStartup() {
@@ -96,51 +101,93 @@ public final class WorkbenchSmoke implements IStartup {
             var page = PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage();
             var view = (AnalysisView) page.findView(AnalysisView.ID);
             require(view != null, "Command did not open the analysis view");
-            var controls = controls(view.getSite().getShell());
-            var apply = controls.stream().filter(control -> control instanceof Button button
-                    && button.getText().equals("Применить исправление в редакторе"))
-                    .map(Button.class::cast).findFirst().orElseThrow();
-            if (!apply.isEnabled()) {
-                var error = controls.stream().filter(control -> control instanceof Label label
-                        && label.getText().equals("Анализ завершился ошибкой.")).findFirst();
-                require(error.isEmpty(), "Analysis failed in the OSGi runtime");
+            var tabs = controls(view.getSite().getShell()).stream().filter(control -> control instanceof TabFolder folder
+                    && folder.getItemCount() == 3 && folder.getItem(0).getText().startsWith("Рекомендации"))
+                    .map(TabFolder.class::cast).findFirst().orElseThrow();
+            var controls = controls(tabs.getParent());
+            var apply = button(controls, "Заменить запрос");
+            var cancel = button(controls, "Отменить");
+            var analyze = button(controls, "Анализировать");
+            var preview = button(controls, "Сравнить SQL");
+            if (cancel.isEnabled()) {
                 require(System.nanoTime() < deadline, "Timed out waiting for analysis");
                 Display.getDefault().timerExec(100, this::check);
                 return;
             }
-            require(controls.stream().anyMatch(control -> control instanceof Tree tree && tree.getItemCount() > 0
-                    && tree.getItem(0).getText().contains("LogicalAggregate")), "Missing Calcite tree");
-            require(controls.stream().anyMatch(control -> control instanceof Table table
-                    && java.util.Arrays.stream(table.getItems()).anyMatch(item -> item.getText(0).equals("Найдено")
-                        && item.getText(1).contains("DISTINCT"))), "Missing finding");
-            var after = controls.stream().filter(control -> control instanceof Button button
-                    && button.getText().equals("План после исправления"))
-                    .map(Button.class::cast).findFirst().orElseThrow();
-            after.setSelection(true);
-            after.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
-            require(controls.stream().anyMatch(control -> control instanceof Tree tree && tree.getItemCount() > 0
-                    && tree.getItem(0).getText().contains("LogicalProject")), "After toggle did not rebuild tree");
-            after.setSelection(false);
-            after.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
-            var shell = view.getSite().getShell();
-            var size = shell.getSize();
-            var image = new Image(shell.getDisplay(), size.x, size.y);
-            var graphics = new GC(image);
-            try {
-                if (shell.print(graphics)) {
-                    var loader = new ImageLoader();
-                    loader.data = new org.eclipse.swt.graphics.ImageData[] {image.getImageData()};
-                    loader.save(System.getProperty("vkr.smoke.result") + ".png", SWT.IMAGE_PNG);
-                }
-            } finally {
-                graphics.dispose();
-                image.dispose();
+            var resultControls = controls((Composite) tabs.getItem(0).getControl());
+            var findings = resultControls.stream().filter(Table.class::isInstance).map(Table.class::cast).findFirst().orElseThrow();
+            var details = resultControls.stream().filter(StyledText.class::isInstance).map(StyledText.class::cast).findFirst().orElseThrow();
+            require(analyze.isEnabled(), "Analyze did not become available after completion");
+            if (phase == 1) {
+                require(findings.getItemCount() == 0, "Non-findings appear in the recommendations list");
+                require(!preview.isEnabled() && !apply.isEnabled(), "No-change query still offers an edit");
+                require(details.getText().contains("не обнаружены"), "Missing empty state");
+                reanalyze("SELECT id FROM smoke_customer UNION SELECT id FROM smoke_orders", 2);
+                return;
             }
+            if (phase == 2) {
+                var scope = resultControls.stream().filter(Link.class::isInstance).map(Link.class::cast).findFirst().orElseThrow();
+                require(scope.getText().contains("(1)"), "Unsupported rule is hidden without an explanation");
+                scope.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
+                require(details.getText().contains("операций над множествами"), "Scope link did not explain the limitation");
+                reanalyze("SELECT missing_column FROM smoke_customer", 3);
+                return;
+            }
+            if (phase == 3) {
+                require(controls.stream().anyMatch(control -> control instanceof Label label
+                        && label.getText().equals("Не удалось проверить запрос.")), "Missing error state");
+                require(details.getText().contains("missing_column"), "SQL error did not reach the user");
+                require(!apply.isEnabled(), "Error state permits applying a previous result");
+                reanalyze(SQL, 4);
+                cancel.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
+                return;
+            }
+            if (phase == 4) {
+                require(controls.stream().anyMatch(control -> control instanceof Label label
+                        && label.getText().equals("Анализ отменён.")), "Cancelled result was replaced by a late callback");
+                require(!apply.isEnabled() && findings.getItemCount() == 0, "Cancelled analysis exposed a result");
+                reanalyze(SQL, 5);
+                return;
+            }
+            require(apply.isEnabled(), "Analysis did not produce the expected correction");
+            require(findings.getItemCount() == 1 && findings.getItem(0).getText().contains("DISTINCT"), "Missing finding");
+            if (phase == 5) {
+                finish(null);
+                return;
+            }
+            require(tabs.getSelectionIndex() == 0 && !apply.isVisible(), "Initial view bypasses the recommendations and preview");
+            String explanation = details.getText();
+            require(explanation.contains("EXISTS"), "Recommendation is missing its next action");
+            screenshot(view, "recommendations");
+            button(controls, "Показать в плане").notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
+            require(tabs.getSelectionIndex() == 2, "Plan action did not open its tab");
+            var tree = controls.stream().filter(Tree.class::isInstance).map(Tree.class::cast).findFirst().orElseThrow();
+            require(tree.getItem(0).getText().contains("LogicalAggregate"), "Missing original Calcite tree");
+            tree.setSelection(tree.getItem(0));
+            tree.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
+            require(details.getText().equals(explanation), "Inspecting a node erased the recommendation");
+            var version = controls.stream().filter(Combo.class::isInstance).map(Combo.class::cast).findFirst().orElseThrow();
+            version.select(1);
+            version.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
+            require(tree.getItem(0).getText().contains("LogicalProject"), "After selection did not rebuild tree");
+            version.select(0);
+            version.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
+            screenshot(view, "plan");
+            preview.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
+            require(tabs.getSelectionIndex() == 1 && apply.isVisible(), "Preview did not reveal the apply action");
+            var sqlTexts = controls((Composite) tabs.getItem(1).getControl()).stream()
+                    .filter(StyledText.class::isInstance).map(StyledText.class::cast).filter(Control::isVisible).toList();
+            require(sqlTexts.stream().anyMatch(text -> text.getText().equals(SQL)), "Diff lost the source SQL");
+            var rewritten = sqlTexts.stream().filter(text -> text.getText().contains("EXISTS")).findFirst().orElseThrow();
+            var original = sqlTexts.stream().filter(text -> text.getText().equals(SQL)).findFirst().orElseThrow();
+            require(original.toDisplay(0, 0).x < rewritten.toDisplay(0, 0).x, "SQL comparison must show before on the left");
+            require(sqlTexts.stream().noneMatch(StyledText::getEditable), "Diff should be read-only");
+            String replacement = rewritten.getText();
+            screenshot(view, "sql-diff");
             var source = EditorSnapshot.capture(editor);
             apply.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
-            require(editor.getDocument().get().contains("EXISTS"), "Apply did not update the editor");
-            require(editor.getDocument().get().startsWith("SELECT 42;\n"), "Apply changed previous statement");
-            require(editor.getDocument().get().endsWith(";\nSELECT 99;"), "Apply changed next statement");
+            require(editor.getDocument().get().equals("SELECT 42;\n" + replacement + ";\nSELECT 99;"),
+                    "Applied SQL differs from the preview or changed adjacent statements");
             editor.getTextViewer().getUndoManager().undo();
             require(editor.getDocument().get().equals(script), "Undo did not restore the whole source");
             editor.getDocument().replace(0, 0, "-- changed\n");
@@ -151,9 +198,46 @@ public final class WorkbenchSmoke implements IStartup {
             } catch (IllegalStateException expected) {
                 require(editor.getDocument().get().startsWith("-- changed"), "Stale text was replaced");
             }
-            finish(null);
+            reanalyze("SELECT id FROM smoke_customer", 1);
         } catch (Throwable failure) {
             finish(failure);
+        }
+    }
+
+    private void reanalyze(String sql, int nextPhase) throws Exception {
+        phase = nextPhase;
+        editor.getDocument().set(sql);
+        editor.getSelectionProvider().setSelection(new TextSelection(0, sql.length()));
+        var page = PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage();
+        var view = (AnalysisView) page.findView(AnalysisView.ID);
+        page.activate(view);
+        button(controls(view.getSite().getShell()), "Анализировать")
+                .notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
+        deadline = System.nanoTime() + 60_000_000_000L;
+        Display.getDefault().timerExec(250, this::check);
+    }
+
+    private static Button button(List<Control> controls, String text) {
+        return controls.stream().filter(control -> control instanceof Button button && button.getText().equals(text))
+                .map(Button.class::cast).findFirst().orElseThrow();
+    }
+
+    private static void screenshot(AnalysisView view, String name) {
+        var shell = view.getSite().getShell();
+        shell.layout(true, true);
+        shell.update();
+        var size = shell.getSize();
+        var image = new Image(shell.getDisplay(), size.x, size.y);
+        var graphics = new GC(image);
+        try {
+            if (shell.print(graphics)) {
+                var loader = new ImageLoader();
+                loader.data = new org.eclipse.swt.graphics.ImageData[] {image.getImageData()};
+                loader.save(System.getProperty("vkr.smoke.result") + "-" + name + ".png", SWT.IMAGE_PNG);
+            }
+        } finally {
+            graphics.dispose();
+            image.dispose();
         }
     }
 
@@ -176,7 +260,9 @@ public final class WorkbenchSmoke implements IStartup {
 
     private void finish(Throwable failure) {
         try {
-            String result = "PASS — command, PostgreSQL metadata, Calcite OSGi loading, finding, before/after tree, caret, selection, apply, Undo, stale edit\n";
+            String result = "PASS — command, PostgreSQL metadata, recommendations, native SQL diff, independent node details, "
+                    + "before/after tree, caret, selection, preview/apply equality, Undo, stale edit, panel reanalysis, "
+                    + "empty/scope/error states, cancellation and recovery\n";
             if (failure != null) {
                 var writer = new java.io.StringWriter();
                 failure.printStackTrace(new java.io.PrintWriter(writer));

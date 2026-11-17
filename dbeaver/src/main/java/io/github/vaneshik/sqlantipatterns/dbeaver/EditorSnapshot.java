@@ -48,10 +48,7 @@ record EditorSnapshot(SQLEditor editor, IDocument document, String fullText,
         if (!isCurrent()) {
             throw new IllegalStateException("Текст или подключение изменились. Повторите анализ.");
         }
-        String replacement = suggestion.stripTrailing();
-        if (!sql.stripTrailing().endsWith(";") && replacement.endsWith(";")) {
-            replacement = replacement.substring(0, replacement.length() - 1);
-        }
+        String replacement = replacement(suggestion);
         var undo = editor.getTextViewer().getRewriteTarget();
         undo.beginCompoundChange();
         try {
@@ -61,5 +58,13 @@ record EditorSnapshot(SQLEditor editor, IDocument document, String fullText,
         }
         editor.selectAndReveal(offset, replacement.length());
         editor.setFocus();
+    }
+
+    String replacement(String suggestion) {
+        String replacement = suggestion.stripTrailing();
+        if (!sql.stripTrailing().endsWith(";") && replacement.endsWith(";")) {
+            replacement = replacement.substring(0, replacement.length() - 1);
+        }
+        return replacement;
     }
 }

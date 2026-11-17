@@ -17,6 +17,8 @@ def main():
     parser.add_argument("--user", required=True)
     args = parser.parse_args()
     here = Path(__file__).resolve().parent
+    version = next(line.split(":", 1)[1].strip() for line in (here / "META-INF/MANIFEST.MF").read_text().splitlines()
+                   if line.startswith("Bundle-Version:"))
     target = Path(tempfile.mkdtemp(prefix="smoke-", dir=here / "target"))
     platform = args.dbeaver_home.resolve()
     java_home = Path(os.environ["JAVA_HOME"])
@@ -37,10 +39,10 @@ def main():
                          '</extension></fragment>')
         for file in classes.rglob("*.class"):
             archive.write(file, file.relative_to(classes))
-    plugin = here / "target/repository/plugins/io.github.vaneshik.sqlantipatterns.dbeaver_0.1.0.jar"
+    plugin = here / f"target/repository/plugins/io.github.vaneshik.sqlantipatterns.dbeaver_{version}.jar"
     config = target / "configuration"
     configuration(platform, config, [
-        f"io.github.vaneshik.sqlantipatterns.dbeaver,0.1.0,{plugin.as_uri()},4,false",
+        f"io.github.vaneshik.sqlantipatterns.dbeaver,{version},{plugin.as_uri()},4,false",
         f"io.github.vaneshik.sqlantipatterns.smoke,0.1.0,{fragment.as_uri()},4,false",
     ])
     home = target / "home"
