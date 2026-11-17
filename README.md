@@ -10,8 +10,16 @@
 
 Для PostgreSQL. Исправления с предпросмотром и Undo.
 
-| Рекомендации | SQL до/после | Логический план |
-| --- | --- | --- |
-| ![Рекомендации](dbeaver/screenshots/recommendations.png) | ![Сравнение SQL](dbeaver/screenshots/sql-diff.png) | ![Логический план](dbeaver/screenshots/logical-plan.png) |
+### Рекомендации
+
+![Рекомендации](dbeaver/screenshots/recommendations.png)
+
+### SQL до/после
+
+![Сравнение SQL](dbeaver/screenshots/sql-diff.png)
+
+### Логический план
+
+![Логический план](dbeaver/screenshots/logical-plan.png)
 
 tbd

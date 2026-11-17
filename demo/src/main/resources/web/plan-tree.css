@@ -1,0 +1,48 @@
+.plan-graph {
+  --graph-background: #fff; --graph-text: #222; --graph-muted: #555; --graph-line: #999;
+  --graph-match: #ffe0de; --graph-match-line: #b42318; --graph-proof: #eef5ff; --graph-proof-line: #305b8e;
+  color: var(--graph-text); background: var(--graph-background);
+  display: flex; flex-direction: column; min-width: 0; height: 460px; font: 14px/1.5 Arial, sans-serif;
+}
+.plan-graph[data-theme="dark"] {
+  --graph-background: #25272b; --graph-text: #e6e8ed; --graph-muted: #b5bac4; --graph-line: #69717f;
+  --graph-match: #4c2d30; --graph-match-line: #f59a91; --graph-proof: #233c55; --graph-proof-line: #8abcf1;
+  color-scheme: dark;
+}
+.plan-graph * { box-sizing: border-box; }
+.graph-toolbar { display: flex; align-items: center; gap: 6px; padding: 4px 8px 8px; flex: 0 0 auto; }
+.graph-toolbar button { background: var(--graph-background); color: var(--graph-text); border: 1px solid var(--graph-line); padding: 3px 9px; font: inherit; cursor: pointer; }
+.graph-scale { color: var(--graph-muted); font-size: 12px; margin-left: 4px; }
+.plan-graph .tree-scroll { overflow: auto; flex: 1; min-height: 0; padding: 16px; overscroll-behavior: contain; }
+.plan-graph .graph-canvas { position: relative; margin: 0 auto; }
+.plan-graph .graph-canvas > .tree { position: absolute; top: 0; left: 0; margin: 0; transform-origin: top left; }
+.plan-graph .tree, .plan-graph .tree ul { display: flex; width: max-content; justify-content: center; list-style: none; margin: 0 auto; padding: 0; position: relative; }
+.plan-graph .tree li { display: flex; flex-direction: column; align-items: center; position: relative; padding: 0 8px; }
+.plan-graph .tree ul { padding-top: 24px; }
+.plan-graph .tree ul::before { content: ""; position: absolute; top: 0; left: 50%; height: 12px; border-left: 1px solid var(--graph-line); }
+.plan-graph .tree ul > li::before { content: ""; position: absolute; top: -12px; left: 0; right: 0; border-top: 1px solid var(--graph-line); }
+.plan-graph .tree ul > li::after { content: ""; position: absolute; top: -12px; left: 50%; height: 12px; border-left: 1px solid var(--graph-line); }
+.plan-graph .tree ul > li:first-child::before { left: 50%; }
+.plan-graph .tree ul > li:last-child::before { right: 50%; }
+.plan-graph .node { display: flex; flex-direction: column; width: var(--node-width, 190px); flex-shrink: 0; border: 1px solid var(--graph-line); border-radius: 3px; color: var(--graph-text); background: var(--graph-background); padding: 7px 10px; text-align: left; gap: 3px; cursor: pointer; }
+.plan-graph .node > strong { font: bold 13px/1.5 Arial, sans-serif; }
+.plan-graph .node > span { font: 11px/1.5 monospace; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--graph-muted); }
+.plan-graph .matched > .node { background: var(--graph-match); border-color: var(--graph-match-line); }
+.plan-graph .proved:not(.matched) > .node { background: var(--graph-proof); border-color: var(--graph-proof-line); }
+.plan-graph li.matched > ul:has(> li.matched)::before,
+.plan-graph li.matched > ul > li.matched::before,
+.plan-graph li.matched > ul > li.matched::after { border-color: var(--graph-match-line); border-width: 2px; }
+.plan-graph .node[aria-pressed="true"] { outline: 2px solid var(--graph-text); outline-offset: 3px; }
+.plan-graph button:focus-visible, .plan-graph .tree-scroll:focus-visible { outline: 2px solid var(--graph-text); outline-offset: 3px; }
+.plan-graph .tree[data-direction="right"], .plan-graph .tree[data-direction="right"] ul { flex-direction: column; }
+.plan-graph .tree[data-direction="right"] li { flex-direction: row; padding: 8px 0; }
+.plan-graph .tree[data-direction="right"] li:only-child { padding: 0; }
+.plan-graph .tree[data-direction="right"] ul { padding: 0 0 0 24px; }
+.plan-graph .tree[data-direction="right"] ul::before { top: 50%; left: 0; width: 12px; height: 0; border-left: 0; border-top: 1px solid var(--graph-line); }
+.plan-graph .tree[data-direction="right"] ul > li::before { top: 0; bottom: 0; left: -12px; right: auto; width: 0; border-top: 0; border-left: 1px solid var(--graph-line); }
+.plan-graph .tree[data-direction="right"] ul > li::after { top: 50%; left: -12px; width: 12px; height: 0; border-left: 0; border-top: 1px solid var(--graph-line); }
+.plan-graph .tree[data-direction="right"] ul > li:first-child::before { top: 50%; }
+.plan-graph .tree[data-direction="right"] ul > li:last-child::before { bottom: 50%; }
+.plan-graph .tree[data-direction="right"] li.matched > ul:has(> li.matched)::before,
+.plan-graph .tree[data-direction="right"] li.matched > ul > li.matched::before,
+.plan-graph .tree[data-direction="right"] li.matched > ul > li.matched::after { border-color: var(--graph-match-line); border-width: 2px; }

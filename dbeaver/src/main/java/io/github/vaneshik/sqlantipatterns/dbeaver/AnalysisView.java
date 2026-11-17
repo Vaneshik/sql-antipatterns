@@ -1,7 +1,7 @@
 package io.github.vaneshik.sqlantipatterns.dbeaver;
 
 import io.github.vaneshik.sqlantipatterns.Analyzer;
-import io.github.vaneshik.sqlantipatterns.PlanNode;
+import io.github.vaneshik.sqlantipatterns.PropertyAnalysis;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -14,7 +14,6 @@ import org.eclipse.compare.contentmergeviewer.TextMergeViewer;
 import org.eclipse.compare.structuremergeviewer.DiffNode;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.dialogs.MessageDialog;
-import org.eclipse.jface.resource.JFaceResources;
 import org.eclipse.jface.text.DocumentEvent;
 import org.eclipse.jface.text.IDocumentListener;
 import org.eclipse.swt.SWT;
@@ -32,8 +31,6 @@ import org.eclipse.swt.widgets.TabFolder;
 import org.eclipse.swt.widgets.TabItem;
 import org.eclipse.swt.widgets.Table;
 import org.eclipse.swt.widgets.TableItem;
-import org.eclipse.swt.widgets.Tree;
-import org.eclipse.swt.widgets.TreeItem;
 import org.eclipse.ui.part.ViewPart;
 
 public final class AnalysisView extends ViewPart {
@@ -54,8 +51,7 @@ public final class AnalysisView extends ViewPart {
     private Link scope;
     private TextMergeViewer comparison;
     private Combo planVersion;
-    private Tree tree;
-    private StyledText nodeDetails;
+    private PlanGraph graph;
     private EditorSnapshot source;
     private Analyzer.Result advice;
     private Job job;
@@ -176,24 +172,20 @@ public final class AnalysisView extends ViewPart {
 
         var plan = new Composite(tabs, SWT.NONE);
         plan.setLayout(new GridLayout(1, false));
-        planVersion = new Combo(plan, SWT.READ_ONLY);
+        var planActions = new Composite(plan, SWT.NONE);
+        planActions.setLayoutData(new GridData(SWT.FILL, SWT.CENTER, true, false));
+        planActions.setLayout(new GridLayout(2, false));
+        planVersion = new Combo(planActions, SWT.READ_ONLY);
         planVersion.setItems("Исходный запрос", "Исправленный запрос");
         planVersion.select(0);
         planVersion.setEnabled(false);
         planVersion.addListener(SWT.Selection, event -> renderPlan());
-        var planContent = new SashForm(plan, SWT.HORIZONTAL);
-        planContent.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
-        tree = new Tree(planContent, SWT.BORDER | SWT.H_SCROLL | SWT.V_SCROLL);
-        nodeDetails = new StyledText(planContent, SWT.BORDER | SWT.READ_ONLY | SWT.WRAP | SWT.V_SCROLL);
-        tree.addListener(SWT.Selection, event -> {
-            if (tree.getSelectionCount() > 0 && tree.getSelection()[0].getData() instanceof PlanNode node) {
-                nodeDetails.setText(node.type() + " #" + node.id() + "\n\n"
-                        + node.attributes().entrySet().stream().map(entry -> entry.getKey() + " = " + entry.getValue())
-                            .collect(Collectors.joining("\n"))
-                        + "\n\n" + String.join("\n", node.fields()));
-            }
-        });
-        planContent.setWeights(45, 55);
+        var expand = new Button(planActions, SWT.PUSH);
+        expand.setText("Развернуть / свернуть");
+        expand.setLayoutData(new GridData(SWT.END, SWT.CENTER, true, false));
+        expand.addListener(SWT.Selection, event -> getSite().getPage().toggleZoom(getSite().getPage().getReference(this)));
+        graph = new PlanGraph(plan);
+        graph.setLayoutData(new GridData(SWT.FILL, SWT.FILL, true, true));
         var planTab = new TabItem(tabs, SWT.NONE);
         planTab.setText("Логический план");
         planTab.setControl(plan);
@@ -211,11 +203,10 @@ public final class AnalysisView extends ViewPart {
         sourceLabel.setText(snapshot.editor().getEditorInput().getName() + " · "
                 + snapshot.context().getDataSource().getContainer().getName());
         advice = null;
-        tree.removeAll();
+        graph.clear();
         findings.removeAll();
         results.setMaximizedControl(details);
         details.setText("Читаем метаданные PostgreSQL и строим логический план…");
-        nodeDetails.setText("");
         scope.setText("");
         comparison.setInput(null);
         changeSummary.setText("Выполняется анализ…");
@@ -241,11 +232,6 @@ public final class AnalysisView extends ViewPart {
             return;
         }
         advice = result;
-        analyze.setEnabled(true);
-        cancel.setEnabled(false);
-        apply.setEnabled(source.isCurrent() && result.optimized().changed());
-        preview.setEnabled(result.optimized().changed());
-        planVersion.setEnabled(result.optimized().changed());
         comparison.setInput(new DiffNode(new SqlText("Исходный SQL", source.sql()),
                 new SqlText("Исправленный SQL", result.optimized().changed()
                         ? source.replacement(result.optimized().sql()) : source.sql())));
@@ -273,6 +259,11 @@ public final class AnalysisView extends ViewPart {
         }
         setStatus(source.isCurrent() ? (count > 0 ? "Найдено рекомендаций — " + count : "Проверка завершена")
                 : "Запрос или подключение изменились. Повторите анализ.");
+        analyze.setEnabled(true);
+        cancel.setEnabled(false);
+        apply.setEnabled(source.isCurrent() && result.optimized().changed());
+        preview.setEnabled(result.optimized().changed());
+        planVersion.setEnabled(result.optimized().changed());
     }
 
     void failed(long request, Exception exception) {
@@ -308,9 +299,6 @@ public final class AnalysisView extends ViewPart {
         if (advice == null) {
             return;
         }
-        tree.removeAll();
-        addNode(new TreeItem(tree, SWT.NONE), planVersion.getSelectionIndex() == 1 ? advice.optimized().tree() : advice.tree());
-        nodeDetails.setText("Выберите узел, чтобы увидеть выражения и типы колонок.");
         List<Integer> matches = List.of();
         if (planVersion.getSelectionIndex() == 1) {
             matches = advice.optimized().rules().stream().filter(rule -> rule.status() == Analyzer.Status.FOUND)
@@ -318,21 +306,10 @@ public final class AnalysisView extends ViewPart {
         } else if (findings.getSelectionCount() > 0) {
             matches = ((Analyzer.RuleResult) findings.getSelection()[0].getData()).matchedNodeIds();
         }
-        highlight(tree.getItem(0), matches);
-    }
-
-    private void addNode(TreeItem item, PlanNode node) {
-        item.setText(node.type() + " #" + node.id());
-        item.setData(node);
-        for (PlanNode input : node.inputs()) {
-            addNode(new TreeItem(item, SWT.NONE), input);
-        }
-        for (PlanNode.Subquery subquery : node.subqueries()) {
-            var child = new TreeItem(item, SWT.NONE);
-            addNode(child, subquery.plan());
-            child.setText(subquery.operator() + " · " + child.getText());
-        }
-        item.setExpanded(true);
+        var properties = planVersion.getSelectionIndex() == 1 ? advice.optimized().properties() : advice.properties();
+        graph.show(planVersion.getSelectionIndex() == 1 ? advice.optimized().tree() : advice.tree(), matches,
+                properties.stream().filter(property -> property.status() == PropertyAnalysis.Status.PROVED)
+                        .map(PropertyAnalysis.Result::nodeId).toList());
     }
 
     private void showFinding() {
@@ -343,16 +320,6 @@ public final class AnalysisView extends ViewPart {
         details.setText(rule.recommendation() + "\n\n" + rule.explanation());
         showInPlan.setEnabled(true);
         renderPlan();
-    }
-
-    private void highlight(TreeItem item, List<Integer> matches) {
-        var node = (PlanNode) item.getData();
-        item.setFont(matches.contains(node.id()) ? JFaceResources.getFontRegistry().getBold(JFaceResources.DEFAULT_FONT) : null);
-        item.setBackground(matches.contains(node.id()) ? tree.getDisplay().getSystemColor(SWT.COLOR_INFO_BACKGROUND) : null);
-        item.setForeground(matches.contains(node.id()) ? tree.getDisplay().getSystemColor(SWT.COLOR_INFO_FOREGROUND) : null);
-        for (TreeItem child : item.getItems()) {
-            highlight(child, matches);
-        }
     }
 
     private record SqlText(String name, String text) implements ITypedElement, IEncodedStreamContentAccessor {

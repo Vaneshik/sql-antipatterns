@@ -15,7 +15,7 @@ import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Link;
 import org.eclipse.swt.widgets.TabFolder;
 import org.eclipse.swt.widgets.Table;
-import org.eclipse.swt.widgets.Tree;
+import org.eclipse.swt.browser.Browser;
 import org.eclipse.swt.graphics.GC;
 import org.eclipse.swt.graphics.Image;
 import org.eclipse.swt.graphics.ImageLoader;
@@ -109,7 +109,7 @@ public final class WorkbenchSmoke implements IStartup {
             var cancel = button(controls, "Отменить");
             var analyze = button(controls, "Анализировать");
             var preview = button(controls, "Сравнить SQL");
-            if (cancel.isEnabled()) {
+            if (cancel.getEnabled()) {
                 require(System.nanoTime() < deadline, "Timed out waiting for analysis");
                 Display.getDefault().timerExec(100, this::check);
                 return;
@@ -155,23 +155,68 @@ public final class WorkbenchSmoke implements IStartup {
                 finish(null);
                 return;
             }
-            require(tabs.getSelectionIndex() == 0 && !apply.isVisible(), "Initial view bypasses the recommendations and preview");
-            String explanation = details.getText();
-            require(explanation.contains("EXISTS"), "Recommendation is missing its next action");
-            screenshot(view, "recommendations");
-            button(controls, "Показать в плане").notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
-            require(tabs.getSelectionIndex() == 2, "Plan action did not open its tab");
-            var tree = controls.stream().filter(Tree.class::isInstance).map(Tree.class::cast).findFirst().orElseThrow();
-            require(tree.getItem(0).getText().contains("LogicalAggregate"), "Missing original Calcite tree");
-            tree.setSelection(tree.getItem(0));
-            tree.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
-            require(details.getText().equals(explanation), "Inspecting a node erased the recommendation");
-            var version = controls.stream().filter(Combo.class::isInstance).map(Combo.class::cast).findFirst().orElseThrow();
-            version.select(1);
-            version.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
-            require(tree.getItem(0).getText().contains("LogicalProject"), "After selection did not rebuild tree");
-            version.select(0);
-            version.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
+            var browser = controls.stream().filter(Browser.class::isInstance).map(Browser.class::cast).findFirst().orElseThrow();
+            if (!Boolean.TRUE.equals(browser.evaluate("return !!window.showPlan && document.querySelectorAll('.node').length > 0;"))) {
+                require(System.nanoTime() < deadline, "Embedded graph did not load");
+                Display.getDefault().timerExec(100, this::check);
+                return;
+            }
+            if (phase == 6) {
+                if (browser.getSize().y < 300) {
+                    require(System.nanoTime() < deadline, "Expanded plan did not receive its viewport");
+                    Display.getDefault().timerExec(100, this::check);
+                    return;
+                }
+                require(((Number) browser.evaluate("return parseInt(document.querySelector('.graph-scale').textContent, 10);")).intValue() >= 75,
+                        "Expanded graph kept the reduced scale of the small pane");
+                screenshot(view, "plan-expanded");
+                button(controls, "Развернуть / свернуть").notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
+                phase = 7;
+                Display.getDefault().timerExec(300, this::check);
+                return;
+            }
+            if (phase == 0) {
+                require(tabs.getSelectionIndex() == 0 && !apply.isVisible(), "Initial view bypasses the recommendations and preview");
+                String explanation = details.getText();
+                require(explanation.contains("EXISTS"), "Recommendation is missing its next action");
+                screenshot(view, "recommendations");
+                button(controls, "Показать в плане").notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
+                require(tabs.getSelectionIndex() == 2, "Plan action did not open its tab");
+                require(((Number) browser.evaluate("return document.querySelectorAll('.node').length;")).intValue() == 6,
+                        "Graph does not contain all plan nodes");
+                require(((Number) browser.evaluate("return document.querySelectorAll('.matched > .node').length;")).intValue() == 4,
+                        "Graph does not highlight the matching subtree");
+                require(((Number) browser.evaluate("return document.querySelectorAll('.tree ul').length;")).intValue() == 4,
+                        "Plan connections are missing");
+                browser.execute("document.querySelector('.node').click();");
+                require(browser.evaluate("return document.querySelector('#selected-title').textContent;").toString().contains("LogicalAggregate"),
+                        "Graph selection did not inspect the clicked node");
+                require(details.getText().equals(explanation), "Inspecting a node erased the recommendation");
+                browser.execute("document.querySelector('[aria-label=\"Масштаб 100%\"]').click();");
+                require(browser.evaluate("return document.querySelector('.graph-scale').textContent;").equals("100%"), "Zoom reset did not work");
+                browser.execute("document.querySelector('[aria-label=\"Увеличить масштаб\"]').click();");
+                require(browser.evaluate("return document.querySelector('.graph-scale').textContent;").equals("120%"), "Graph zoom did not work");
+                var version = controls.stream().filter(Combo.class::isInstance).map(Combo.class::cast).findFirst().orElseThrow();
+                version.select(1);
+                version.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
+                require(browser.evaluate("return document.querySelector('#selected-title').textContent;").toString().contains("LogicalProject"),
+                        "After selection did not rebuild the graph");
+                require(Boolean.TRUE.equals(browser.evaluate("return [...document.querySelectorAll('.node strong')].some(n => n.textContent.includes('EXISTS'));")),
+                        "EXISTS subquery is missing from the graph");
+                version.select(0);
+                version.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
+                browser.execute("document.querySelector('[aria-label=\"Показать весь план\"]').click();");
+                browser.execute("planGraph.render({id: 999, type: 'LogicalValues', attributes: {text: '<img src=x onerror=alert(1)>'}, fields: [], inputs: [], subqueries: []}, [], []);");
+                require(Boolean.TRUE.equals(browser.evaluate("return document.querySelectorAll('img').length === 0 && document.querySelector('.node span').textContent.includes('<img');")),
+                        "SQL expressions were interpreted as HTML");
+                version.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
+                button(controls, "Развернуть / свернуть").notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
+                phase = 6;
+                Display.getDefault().timerExec(300, this::check);
+                return;
+            }
+            require(Boolean.TRUE.equals(browser.evaluate("return (() => { const n = document.querySelector('.node[aria-pressed=true]').getBoundingClientRect(); const v = document.querySelector('.tree-scroll').getBoundingClientRect(); return n.top >= v.top && n.bottom <= v.bottom && n.left >= v.left && n.right <= v.right; })();")),
+                    "Selected node is clipped after restoring the small pane");
             screenshot(view, "plan");
             preview.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
             require(tabs.getSelectionIndex() == 1 && apply.isVisible(), "Preview did not reveal the apply action");
@@ -260,8 +305,8 @@ public final class WorkbenchSmoke implements IStartup {
 
     private void finish(Throwable failure) {
         try {
-            String result = "PASS — command, PostgreSQL metadata, recommendations, native SQL diff, independent node details, "
-                    + "before/after tree, caret, selection, preview/apply equality, Undo, stale edit, panel reanalysis, "
+            String result = "PASS — command, PostgreSQL metadata, recommendations, native SQL diff, graph nodes and edges, subtree highlighting, "
+                    + "node selection, zoom, expand, SQL text escaping, before/after graph with EXISTS, caret, selection, preview/apply equality, Undo, stale edit, panel reanalysis, "
                     + "empty/scope/error states, cancellation and recovery\n";
             if (failure != null) {
                 var writer = new java.io.StringWriter();

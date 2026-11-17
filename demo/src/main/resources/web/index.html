@@ -7,6 +7,8 @@
   <title>Анализ SQL</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/plan-tree.css">
+  <script src="/plan-tree.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
@@ -76,7 +78,7 @@
         <span id="state" role="status" class="sr-only"></span>
         <div id="empty" class="empty"><p>Постройте план, чтобы увидеть дерево.</p></div>
         <div id="result" hidden>
-          <div class="tree-scroll" tabindex="0" role="region" aria-label="Дерево логического плана"><ul class="tree" id="tree"></ul></div>
+          <div id="plan-graph"></div>
           <div class="inspector">
             <h3 id="selected-title">Узел</h3>
             <dl id="attributes"></dl>

@@ -18,6 +18,8 @@ public final class Main {
             Map.entry("/", "text/html; charset=utf-8"),
             Map.entry("/app.js", "text/javascript; charset=utf-8"),
             Map.entry("/style.css", "text/css; charset=utf-8"),
+            Map.entry("/plan-tree.js", "text/javascript; charset=utf-8"),
+            Map.entry("/plan-tree.css", "text/css; charset=utf-8"),
             Map.entry("/examples/conditional-distinct.sql", "text/plain; charset=utf-8"),
             Map.entry("/examples/contradictory-filter.sql", "text/plain; charset=utf-8"),
             Map.entry("/examples/unused-left-join.sql", "text/plain; charset=utf-8"),

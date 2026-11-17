@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+<style>
+/*GRAPH_STYLES*/
+html, body { height: 100%; margin: 0; }
+body { position: relative; display: flex; flex-direction: column; background: #fff; color: #222; font: 13px/1.5 Arial, sans-serif; }
+body[data-theme="dark"] { background: #25272b; color: #e6e8ed; color-scheme: dark; }
+#plan-graph { flex: 1; height: auto; min-height: 0; }
+#plan-graph .tree-scroll { padding: 8px; }
+#legend { display: flex; gap: 12px; margin-left: auto; font-size: 11px; }
+#legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; margin-right: 5px; border: 1px solid currentColor; }
+#rule-legend { color: #b42318; }
+#proof-legend { color: #305b8e; }
+body[data-theme="dark"] #rule-legend { color: #f59a91; }
+body[data-theme="dark"] #proof-legend { color: #8abcf1; }
+[hidden] { display: none !important; }
+#inspector { position: absolute; bottom: 8px; left: 8px; right: 8px; padding: 8px 10px; border: 1px solid #777; max-height: 70%; overflow: auto; background: inherit; }
+#close-inspector { float: right; border: 0; background: transparent; color: inherit; font-size: 18px; cursor: pointer; }
+summary { cursor: pointer; font-weight: bold; }
+dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font: 12px/1.5 monospace; }
+dd { margin: 0; overflow-wrap: anywhere; }
+pre { font: 12px/1.5 monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<div id="plan-graph"></div>
+<div id="legend"><span id="rule-legend" hidden>Антипаттерн</span><span id="proof-legend" hidden>Доказано в модели</span></div>
+<details id="inspector" hidden>
+  <button id="close-inspector" type="button" aria-label="Закрыть свойства узла">×</button>
+  <summary id="selected-title"></summary>
+  <dl id="attributes"></dl>
+  <details><summary>Колонки и ссылки $n</summary><pre id="fields"></pre></details>
+</details>
+<script>
+/*GRAPH_SCRIPT*/
+const inspector = document.querySelector("#inspector");
+const graphHost = document.querySelector("#plan-graph");
+const planGraph = new PlanTree(graphHost, node => {
+  document.querySelector("#selected-title").textContent = `${node.type} #${node.id}`;
+  const attributes = document.querySelector("#attributes");
+  attributes.replaceChildren();
+  for (const [key, value] of Object.entries(node.attributes)) {
+    const name = document.createElement("dt");
+    name.textContent = key;
+    const description = document.createElement("dd");
+    description.textContent = value;
+    attributes.append(name, description);
+  }
+  document.querySelector("#fields").textContent = "Выходные колонки\n"
+    + node.fields.map((field, index) => `$${index} · ${field}`).join("\n")
+    + "\n\nВходные колонки\n" + node.inputs.flatMap(input => input.fields)
+      .map((field, index) => `$${index} · ${field}`).join("\n");
+  inspector.hidden = false;
+  inspector.open = true;
+});
+document.querySelector(".graph-toolbar").append(document.querySelector("#legend"));
+document.querySelector("#close-inspector").addEventListener("click", () => { inspector.hidden = true; });
+window.showPlan = data => {
+  if (!data) {
+    planGraph.clear();
+    inspector.hidden = true;
+    document.querySelector("#rule-legend").hidden = true;
+    document.querySelector("#proof-legend").hidden = true;
+    return;
+  }
+  document.body.dataset.theme = graphHost.dataset.theme = data.dark ? "dark" : "light";
+  planGraph.render(data.tree, data.matched, data.proved);
+  inspector.open = false;
+  inspector.hidden = true;
+  document.querySelector("#rule-legend").hidden = !data.matched.length;
+  document.querySelector("#proof-legend").hidden = !data.proved.length;
+};
+graphReady();
+</script>
+</body>
+</html>
