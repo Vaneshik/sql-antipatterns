@@ -82,7 +82,8 @@ public final class Analyzer {
                 .typeSystem(new RelDataTypeSystemImpl() {
                     @Override
                     public int getMaxPrecision(SqlTypeName type) {
-                        return type == SqlTypeName.TIMESTAMP ? 6 : super.getMaxPrecision(type);
+                        return type == SqlTypeName.TIMESTAMP || type == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE
+                                ? 6 : super.getMaxPrecision(type);
                     }
                 })
                 .sqlToRelConverterConfig(SqlToRelConverter.config()
