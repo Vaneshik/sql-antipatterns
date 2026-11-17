@@ -58,6 +58,7 @@ def main():
     launcher = next((platform / "plugins").glob("org.eclipse.equinox.launcher_*.jar"))
     with (target / "workbench.log").open("w") as log:
         run(java_home / "bin/java", "-XstartOnFirstThread", f"-Duser.home={home}",
+            "-Ddbeaver.debug.skip-version-check=true",
             f"-Dvkr.smoke.driver={args.driver.resolve()}", f"-Dvkr.smoke.port={args.port}",
             f"-Dvkr.smoke.user={args.user}", f"-Dvkr.smoke.result={result}",
             f"-Dvkr.smoke.url=jdbc:postgresql://127.0.0.1:{args.port}/postgres",

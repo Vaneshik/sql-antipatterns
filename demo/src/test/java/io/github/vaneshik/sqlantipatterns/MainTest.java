@@ -107,13 +107,13 @@ class MainTest {
 
     @Test
     void servesPackagedAssetsWithTheirContentTypes() throws Exception {
-        for (String path : new String[] {"/", "/style.css", "/app.js"}) {
+        for (String path : new String[] {"/", "/style.css", "/app.js", "/plan-tree.js", "/plan-tree.css"}) {
             var response = client.send(HttpRequest.newBuilder(base.resolve(path)).GET().build(),
                     HttpResponse.BodyHandlers.ofString());
             assertEquals(200, response.statusCode());
             String type = switch (path) {
                 case "/" -> "text/html";
-                case "/style.css" -> "text/css";
+                case "/style.css", "/plan-tree.css" -> "text/css";
                 default -> "text/javascript";
             };
             assertTrue(response.headers().firstValue("Content-Type").orElseThrow().startsWith(type));

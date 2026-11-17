@@ -79,6 +79,9 @@ def main():
         archive.write(here / "META-INF/MANIFEST.MF", "META-INF/MANIFEST.MF")
         archive.write(here / "plugin.xml", "plugin.xml")
         archive.write(engine, "lib/sql-analysis.jar")
+        for file in sorted((here / "src/main/resources").rglob("*")):
+            if file.is_file():
+                archive.write(file, file.relative_to(here / "src/main/resources"))
         for file in sorted(classes.rglob("*.class")):
             archive.write(file, file.relative_to(classes))
     with zipfile.ZipFile(features / f"io.github.vaneshik.sqlantipatterns.feature_{version}.jar", "w") as archive:

@@ -5,11 +5,10 @@ const empty = document.querySelector("#empty");
 const error = document.querySelector("#error");
 const finding = document.querySelector("#finding");
 const state = document.querySelector("#state");
-const tree = document.querySelector("#tree");
-let treeScroll = document.querySelector(".tree-scroll");
 const example = document.querySelector("#example");
 const before = document.querySelector("#before");
 const after = document.querySelector("#after");
+const planGraph = new PlanTree(document.querySelector("#plan-graph"), inspect);
 let pending;
 let analysis;
 const propertyLabels = {
@@ -52,8 +51,7 @@ function clearResult(message) {
   document.querySelector("#optimization-state").textContent = "";
 }
 
-function inspect(node, button) {
-  tree.querySelectorAll("button").forEach(item => item.setAttribute("aria-pressed", String(item === button)));
+function inspect(node) {
   document.querySelector("#selected-title").textContent = `${node.type} #${node.id}`;
   const attributes = document.querySelector("#attributes");
   attributes.replaceChildren();
@@ -78,16 +76,6 @@ function render(data, submittedSql) {
   showPlan(analysis);
 }
 
-function centerSelectedNode() {
-  const selected = tree.querySelector('[aria-pressed="true"]');
-  if (!selected || result.hidden) return;
-  const nodeBounds = selected.getBoundingClientRect();
-  const viewportBounds = treeScroll.getBoundingClientRect();
-  const left = treeScroll.scrollLeft + nodeBounds.left - viewportBounds.left
-    - (treeScroll.clientWidth - nodeBounds.width) / 2;
-  treeScroll.scrollTo({ left, behavior: "instant" });
-}
-
 function showPlan(data) {
   sql.value = data.sql;
   before.setAttribute("aria-pressed", String(data === analysis));
@@ -95,39 +83,7 @@ function showPlan(data) {
   const matches = data.rules.filter(rule => rule.status === "FOUND");
   const matched = new Set(matches.flatMap(rule => rule.matchedNodeIds));
   const proved = new Set(data.properties.filter(property => property.status === "PROVED").map(property => property.nodeId));
-  const nodeButtons = new Map();
-  let count = 0;
-  function branch(node, subqueryOperator) {
-    count++;
-    const item = element("li", undefined, matched.has(node.id) ? "matched" : proved.has(node.id) ? "proved" : "");
-    const button = element("button", undefined, "node");
-    button.type = "button";
-    nodeButtons.set(node.id, button);
-    button.setAttribute("aria-pressed", "false");
-    button.setAttribute("aria-label", `${node.type} #${node.id}${matched.has(node.id) ? ", совпадение с правилом" : ""}`);
-    const summary = Object.entries(node.attributes).map(([key, value]) => `${key}=${value}`).join(" · ");
-    const label = node.type === "LogicalJoin" ? `${node.attributes.joinType.toUpperCase()} JOIN`
-      : node.type.replace(/^Logical/, "");
-    button.append(element("strong", subqueryOperator ? `${subqueryOperator} → ${label}` : label),
-      element("span", summary || "Нет атрибутов"));
-    button.title = summary;
-    button.addEventListener("click", () => inspect(node, button));
-    item.append(button);
-    if (node.inputs.length || node.subqueries.length) {
-      const children = element("ul");
-      children.append(...node.inputs.map(input => branch(input)),
-        ...node.subqueries.map(subquery => branch(subquery.plan, subquery.operator)));
-      item.append(children);
-    }
-    return item;
-  }
-  tree.replaceChildren(branch(data.tree));
-  const nextScroll = treeScroll.cloneNode(false);
-  treeResizeObserver.unobserve(treeScroll);
-  treeScroll.replaceWith(nextScroll);
-  treeScroll = nextScroll;
-  treeScroll.append(tree);
-  treeResizeObserver.observe(treeScroll);
+  const count = planGraph.render(data.tree, [...matched], [...proved]);
   document.querySelector("#node-count").textContent = `Узлов: ${count}`;
   document.querySelector("#plan").textContent = data.plan;
   finding.replaceChildren();
@@ -140,10 +96,8 @@ function showPlan(data) {
     const link = element("button", `${title} · #${property.nodeId}`, "property-link");
     link.type = "button";
     link.addEventListener("click", () => {
-      const button = nodeButtons.get(property.nodeId);
-      button.click();
-      button.focus();
-      button.scrollIntoView({ block: "nearest", inline: "nearest" });
+      planGraph.select(property.nodeId);
+      planGraph.buttons.get(property.nodeId)?.button.focus();
     });
     item.append(element("h3"), element("p", propertyStatuses[property.status], "property-status"));
     item.firstChild.append(link);
@@ -186,8 +140,6 @@ function showPlan(data) {
   result.hidden = false;
   finding.hidden = false;
   state.textContent = "План построен";
-  inspect(data.tree, tree.querySelector("button"));
-  centerSelectedNode();
 }
 
 async function analyze() {
@@ -259,6 +211,4 @@ sql.addEventListener("keydown", event => {
     analyze();
   }
 });
-const treeResizeObserver = new ResizeObserver(centerSelectedNode);
-treeResizeObserver.observe(treeScroll);
 loadExample(example.value);
