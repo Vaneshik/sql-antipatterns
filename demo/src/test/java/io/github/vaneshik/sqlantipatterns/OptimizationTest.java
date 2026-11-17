@@ -36,7 +36,9 @@ class OptimizationTest {
             "distinct-join", "exists", "without-key", "redundant-distinct", "distinct-group-by",
             "group-filter", "having-count", "null-comparison", "null-filter", "is-null",
             "left-join-filter", "left-join-is-null", "cartesian-product", "join-in-where",
-            "ordered-exists", "mixed-having"
+            "ordered-exists", "mixed-having", "conditional-distinct", "contradictory-filter",
+            "unused-left-join", "context-join", "right-join-filter", "disjoint-union",
+            "overlapping-union", "fanout-left-join"
     })
     void generatedSqlPreservesRowsDuplicatesNullsAndColumnNames(String example) throws Exception {
         String sql = Files.readString(Path.of("examples", example + ".sql"));
@@ -274,6 +276,54 @@ class OptimizationTest {
         Analyzer.Optimization optimized = analyzer.analyze(sql).optimized();
         try (Connection connection = database()) {
             assertEquals(execute(connection, sql), execute(connection, optimized.sql()), optimized.sql());
+        }
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "conditional-distinct, DISTINCT", "unused-left-join, JOIN", "context-join, JOIN",
+            "right-join-filter, RIGHT"
+    })
+    void appliesProvedPropertiesToSourceSql(String example, String removedKeyword) throws Exception {
+        var result = analyzer.analyze(Files.readString(Path.of("examples", example + ".sql")));
+        assertTrue(result.optimized().changed(), result.optimized().sql());
+        assertFalse(result.optimized().sql().contains(removedKeyword), result.optimized().sql());
+    }
+
+    @Test
+    void replacesUnionOnlyWhenBothUniquenessAndDisjointnessAreProved() throws Exception {
+        var safe = analyzer.analyze(Files.readString(Path.of("examples/disjoint-union.sql")));
+        assertTrue(safe.optimized().changed());
+        assertTrue(safe.optimized().sql().contains("UNION ALL"));
+        assertTrue(safe.optimized().tree().attributes().get("all").equals("true"));
+        var overlap = analyzer.analyze(Files.readString(Path.of("examples/overlapping-union.sql")));
+        assertFalse(overlap.optimized().changed());
+    }
+
+    @Test
+    void keepsHiddenGroupingKeysWhenConsideringJoinRemoval() throws Exception {
+        String sql = "SELECT x.id FROM (SELECT c.id, o.id AS order_id FROM customer c "
+                + "LEFT JOIN orders o ON o.customer_id=c.id GROUP BY c.id, o.id) x";
+        var result = analyzer.analyze(sql);
+        assertTrue(result.properties().stream().filter(item -> item.kind().equals("join_remove"))
+                .noneMatch(item -> item.status() == PropertyAnalysis.Status.PROVED), result.properties().toString());
+        assertEquals(sql, result.optimized().sql());
+    }
+
+    @Test
+    void preservesAliasesAndBagsWhenRemovingTheLeftSideOfRightJoin() throws Exception {
+        String sql = "SELECT purchase.id AS order_number, purchase.status FROM customer buyer "
+                + "RIGHT JOIN orders purchase ON buyer.id = purchase.customer_id";
+        var optimized = analyzer.analyze(sql).optimized();
+        assertTrue(optimized.changed());
+        assertFalse(optimized.sql().contains("JOIN"));
+        assertTrue(optimized.sql().contains("purchase.id AS order_number"));
+        try (Connection connection = database()) {
+            var before = execute(connection, sql);
+            var after = execute(connection, optimized.sql());
+            assertEquals(before.columns(), after.columns());
+            assertEquals(before.rows().stream().collect(Collectors.groupingBy(row -> row, Collectors.counting())),
+                    after.rows().stream().collect(Collectors.groupingBy(row -> row, Collectors.counting())));
         }
     }
 

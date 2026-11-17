@@ -252,6 +252,88 @@ class AnalyzerTest {
         assertTrue(matches.getLast().matchedNodeIds().contains(project.id()));
     }
 
+    @ParameterizedTest
+    @CsvSource({
+            "conditional-distinct, distinct, PROVED",
+            "contradictory-filter, empty, PROVED",
+            "unused-left-join, join_remove, PROVED",
+            "context-join, join_remove, PROVED",
+            "right-join-filter, outer_inner, PROVED",
+            "disjoint-union, union, PROVED",
+            "overlapping-union, union, UNKNOWN",
+            "fanout-left-join, join_remove, UNKNOWN"
+    })
+    void provesPropertiesAtTheActualOperator(String example, String kind, String status) throws Exception {
+        var result = analyzer.analyze(Files.readString(Path.of("examples", example + ".sql")));
+        var property = result.properties().stream().filter(item -> item.kind().equals(kind)).findFirst().orElseThrow();
+        assertEquals(status, property.status().name(), property.toString());
+        var ids = nodes(result.tree()).map(PlanNode::id).toList();
+        assertTrue(ids.contains(property.nodeId()));
+        assertTrue(ids.contains(property.scopeId()));
+        assertFalse(property.representation().isBlank());
+    }
+
+    @Test
+    void findsNestedTargetsWithoutApplyingTheirProofToTheOuterQuery() throws Exception {
+        String sql = "SELECT DISTINCT name FROM (SELECT DISTINCT id, name FROM customer) c";
+        var result = analyzer.analyze(sql);
+        var distinct = result.properties().stream().filter(item -> item.kind().equals("distinct")).toList();
+        assertEquals(2, distinct.size());
+        assertEquals(PropertyAnalysis.Status.UNKNOWN, distinct.get(0).status());
+        assertEquals(PropertyAnalysis.Status.PROVED, distinct.get(1).status());
+        assertFalse(result.optimized().changed());
+        assertEquals(sql, result.optimized().sql());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "SELECT DISTINCT name FROM customer",
+            "SELECT DISTINCT ABS(id) FROM customer",
+            "SELECT DISTINCT customer_id FROM orders",
+            "SELECT id FROM customer WHERE id > 0",
+            "SELECT c.id FROM customer c LEFT JOIN orders o ON o.customer_id=c.id WHERE o.id IS NULL",
+            "SELECT id FROM customer UNION SELECT customer_id FROM orders"
+    })
+    void doesNotTreatAnUnexcludedCollisionAsAProof(String sql) throws Exception {
+        var result = analyzer.analyze(sql);
+        assertFalse(result.properties().isEmpty());
+        assertTrue(result.properties().stream().noneMatch(item -> item.status() == PropertyAnalysis.Status.PROVED),
+                result.properties().toString());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "SELECT DISTINCT 'a' AS x FROM customer",
+            "SELECT DISTINCT CAST(id AS VARCHAR(20)) FROM customer",
+            "SELECT id FROM customer WHERE 'a' <> 'a '",
+            "SELECT DISTINCT RAND() FROM customer"
+    })
+    void exposesUnsupportedExpressionsAndStringSemantics(String sql) throws Exception {
+        var result = analyzer.analyze(sql);
+        assertTrue(result.properties().stream().anyMatch(item -> item.status() == PropertyAnalysis.Status.UNSUPPORTED),
+                result.properties().toString());
+        assertTrue(result.properties().stream().noneMatch(item -> item.status() == PropertyAnalysis.Status.PROVED));
+    }
+
+    @Test
+    void mergesUnionAlternativesWithoutLosingBranchIdentityOrNullDuplicates() throws Exception {
+        String unique = "SELECT id FROM customer WHERE id = 1 UNION SELECT id FROM customer WHERE id = 2 "
+                + "UNION SELECT id FROM customer WHERE id = 3 UNION SELECT id FROM customer WHERE id = 4 "
+                + "UNION SELECT id FROM customer WHERE id = 5";
+        var proved = analyzer.analyze(unique).properties().stream().filter(item -> item.kind().equals("union"))
+                .findFirst().orElseThrow();
+        assertEquals(PropertyAnalysis.Status.PROVED, proved.status(), proved.toString());
+        assertEquals("guarded DAG", proved.representation());
+        String duplicate = unique.replace("id = 5", "id = 1");
+        var unknown = analyzer.analyze(duplicate).properties().stream().filter(item -> item.kind().equals("union"))
+                .findFirst().orElseThrow();
+        assertEquals(PropertyAnalysis.Status.UNKNOWN, unknown.status(), unknown.toString());
+        var nulls = analyzer.analyze("SELECT DISTINCT k FROM (VALUES (CAST(NULL AS INTEGER)), "
+                + "(CAST(NULL AS INTEGER))) AS t(k)");
+        assertTrue(nulls.properties().stream().filter(item -> item.kind().equals("distinct"))
+                .noneMatch(item -> item.status() == PropertyAnalysis.Status.PROVED), nulls.properties().toString());
+    }
+
     private static Stream<PlanNode> nodes(PlanNode node) {
         return Stream.concat(Stream.of(node), node.inputs().stream().flatMap(AnalyzerTest::nodes));
     }

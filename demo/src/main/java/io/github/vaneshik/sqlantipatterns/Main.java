@@ -18,6 +18,14 @@ public final class Main {
             Map.entry("/", "text/html; charset=utf-8"),
             Map.entry("/app.js", "text/javascript; charset=utf-8"),
             Map.entry("/style.css", "text/css; charset=utf-8"),
+            Map.entry("/examples/conditional-distinct.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/contradictory-filter.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/unused-left-join.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/context-join.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/right-join-filter.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/disjoint-union.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/overlapping-union.sql", "text/plain; charset=utf-8"),
+            Map.entry("/examples/fanout-left-join.sql", "text/plain; charset=utf-8"),
             Map.entry("/examples/distinct-join.sql", "text/plain; charset=utf-8"),
             Map.entry("/examples/exists.sql", "text/plain; charset=utf-8"),
             Map.entry("/examples/without-key.sql", "text/plain; charset=utf-8"),
@@ -94,7 +102,7 @@ public final class Main {
                 sendJson(exchange, 422, Map.of("error", e.getMessage()));
             } catch (RuntimeException e) {
                 e.printStackTrace(System.err);
-                sendJson(exchange, 500, Map.of("error", "Calcite не смог обработать запрос."));
+                sendJson(exchange, 500, Map.of("error", "Не удалось выполнить анализ. Подробности в журнале сервера."));
             }
         }
     }
