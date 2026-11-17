@@ -6,6 +6,7 @@ const error = document.querySelector("#error");
 const finding = document.querySelector("#finding");
 const state = document.querySelector("#state");
 const tree = document.querySelector("#tree");
+let treeScroll = document.querySelector(".tree-scroll");
 const example = document.querySelector("#example");
 const before = document.querySelector("#before");
 const after = document.querySelector("#after");
@@ -77,6 +78,16 @@ function render(data, submittedSql) {
   showPlan(analysis);
 }
 
+function centerSelectedNode() {
+  const selected = tree.querySelector('[aria-pressed="true"]');
+  if (!selected || result.hidden) return;
+  const nodeBounds = selected.getBoundingClientRect();
+  const viewportBounds = treeScroll.getBoundingClientRect();
+  const left = treeScroll.scrollLeft + nodeBounds.left - viewportBounds.left
+    - (treeScroll.clientWidth - nodeBounds.width) / 2;
+  treeScroll.scrollTo({ left, behavior: "instant" });
+}
+
 function showPlan(data) {
   sql.value = data.sql;
   before.setAttribute("aria-pressed", String(data === analysis));
@@ -111,6 +122,12 @@ function showPlan(data) {
     return item;
   }
   tree.replaceChildren(branch(data.tree));
+  const nextScroll = treeScroll.cloneNode(false);
+  treeResizeObserver.unobserve(treeScroll);
+  treeScroll.replaceWith(nextScroll);
+  treeScroll = nextScroll;
+  treeScroll.append(tree);
+  treeResizeObserver.observe(treeScroll);
   document.querySelector("#node-count").textContent = `Узлов: ${count}`;
   document.querySelector("#plan").textContent = data.plan;
   finding.replaceChildren();
@@ -170,6 +187,7 @@ function showPlan(data) {
   finding.hidden = false;
   state.textContent = "План построен";
   inspect(data.tree, tree.querySelector("button"));
+  centerSelectedNode();
 }
 
 async function analyze() {
@@ -241,4 +259,6 @@ sql.addEventListener("keydown", event => {
     analyze();
   }
 });
+const treeResizeObserver = new ResizeObserver(centerSelectedNode);
+treeResizeObserver.observe(treeScroll);
 loadExample(example.value);
