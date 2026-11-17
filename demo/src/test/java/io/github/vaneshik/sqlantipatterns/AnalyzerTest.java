@@ -72,10 +72,11 @@ class AnalyzerTest {
                 SELECT DISTINCT c.name
                 FROM customer c JOIN orders o ON c.id = o.customer_id
                 """).rules().getFirst();
-        assertEquals(NOT_FOUND, result.status());
+        assertEquals(FOUND, result.status());
+        assertEquals("distinct-join-keep-distinct", result.ruleId());
         assertTrue(result.explanation().contains("нет ключа"));
-        assertTrue(result.recommendation().isEmpty());
-        assertTrue(result.matchedNodeIds().isEmpty());
+        assertTrue(result.recommendation().contains("Сохраните DISTINCT"));
+        assertFalse(result.matchedNodeIds().isEmpty());
     }
 
     @Test
@@ -107,12 +108,11 @@ class AnalyzerTest {
     @ValueSource(strings = {
             "SELECT DISTINCT c.id, o.status FROM customer c JOIN orders o ON c.id = o.customer_id",
             "SELECT DISTINCT c.id, o.status FROM customer c JOIN orders o ON c.id = o.id",
-            "SELECT DISTINCT c.id, UPPER(c.name) FROM customer c JOIN orders o ON c.id = o.customer_id",
+            "SELECT DISTINCT c.id, RAND() FROM customer c JOIN orders o ON c.id = o.customer_id",
             "SELECT DISTINCT c.id FROM customer c LEFT JOIN orders o ON c.id = o.customer_id",
             "SELECT DISTINCT c.id FROM customer c RIGHT JOIN orders o ON c.id = o.customer_id",
             "SELECT DISTINCT c.id FROM customer c FULL JOIN orders o ON c.id = o.customer_id",
             "SELECT DISTINCT c.id FROM customer c CROSS JOIN orders o",
-            "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id < o.customer_id",
             "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id = c.id",
             "SELECT DISTINCT c.id FROM customer c JOIN orders o ON TRUE",
             "SELECT DISTINCT c.id FROM customer c JOIN customer b ON c.id = b.id",
@@ -122,13 +122,13 @@ class AnalyzerTest {
                     + "JOIN (SELECT * FROM orders) o ON c.id = o.customer_id",
             "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id = o.customer_id LIMIT 1",
             "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id = o.customer_id OFFSET 1",
-            "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id = o.customer_id ORDER BY c.id",
+            "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON c.id = o.customer_id ORDER BY c.name LIMIT 2",
             "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id = o.customer_id GROUP BY c.id",
             "SELECT c.id FROM customer c JOIN orders o ON c.id = o.customer_id GROUP BY c.id",
             "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id = o.customer_id "
-                    + "WHERE o.status = 'paid' OR o.status = 'new'",
+                    + "WHERE RAND() > 0.5",
             "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id = o.customer_id "
-                    + "WHERE UPPER(o.status) = 'PAID'",
+                    + "WHERE o.id IN (SELECT id FROM orders)",
             "SELECT DISTINCT c.id, ROW_NUMBER() OVER (ORDER BY c.id) FROM customer c "
                     + "JOIN orders o ON c.id = o.customer_id",
             "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id = o.customer_id "
@@ -168,17 +168,19 @@ class AnalyzerTest {
     }
 
     @Test
-    void meetingExamplesExerciseThreeDifferentOutcomes() throws Exception {
+    void meetingExamplesDistinguishRemovingAndKeepingDistinct() throws Exception {
         assertEquals(FOUND, analyzer.analyze(Files.readString(Path.of("examples/distinct-join.sql"))).rules().getFirst().status());
         assertEquals(NOT_FOUND, analyzer.analyze(Files.readString(Path.of("examples/exists.sql"))).rules().getFirst().status());
         Analyzer.RuleResult counterexample = analyzer.analyze(Files.readString(Path.of("examples/without-key.sql")))
                 .rules().getFirst();
-        assertEquals(NOT_FOUND, counterexample.status());
+        assertEquals(FOUND, counterexample.status());
+        assertEquals("distinct-join-keep-distinct", counterexample.ruleId());
         assertTrue(counterexample.explanation().contains("нет ключа"));
     }
 
     @ParameterizedTest
     @CsvSource({
+            "without-key, distinct-join-keep-distinct",
             "redundant-distinct, redundant-distinct",
             "distinct-group-by, redundant-distinct",
             "group-filter, group-filter",
@@ -199,7 +201,7 @@ class AnalyzerTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"exists", "without-key", "is-null", "join-in-where", "having-count", "left-join-is-null"})
+    @ValueSource(strings = {"exists", "is-null", "join-in-where", "having-count", "left-join-is-null"})
     void doesNotHighlightCounterexamples(String example) throws Exception {
         Analyzer.Result result = analyzer.analyze(Files.readString(Path.of("examples", example + ".sql")));
         assertTrue(result.rules().stream().noneMatch(rule -> rule.status() == FOUND), result.plan());
@@ -220,7 +222,7 @@ class AnalyzerTest {
                         "SELECT DISTINCT COUNT(*) FROM orders GROUP BY customer_id"),
                 Arguments.of("group-filter",
                         "SELECT customer_id, COUNT(*) FROM orders GROUP BY customer_id "
-                                + "HAVING customer_id > 10 AND COUNT(*) > 1"),
+                                + "HAVING customer_id > 10 OR COUNT(*) > 1"),
                 Arguments.of("group-filter", "SELECT COUNT(*) FROM orders HAVING COUNT(*) > 1"),
                 Arguments.of("group-filter",
                         "SELECT customer_id, COUNT(*) FROM orders GROUP BY GROUPING SETS ((customer_id), ()) "

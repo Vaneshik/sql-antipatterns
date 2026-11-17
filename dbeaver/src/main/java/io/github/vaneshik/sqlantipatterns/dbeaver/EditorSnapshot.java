@@ -42,11 +42,11 @@ record EditorSnapshot(SQLEditor editor, IDocument document, String fullText,
     }
 
     void apply(String suggestion) throws BadLocationException {
-        if (!isCurrent()) {
-            throw new IllegalStateException("Текст или подключение изменились. Повторите анализ.");
-        }
         if (!editor.isEditable() || !editor.validateEditorInputState()) {
             throw new IllegalStateException("Редактор недоступен для изменения.");
+        }
+        if (!isCurrent()) {
+            throw new IllegalStateException("Текст или подключение изменились. Повторите анализ.");
         }
         String replacement = suggestion.stripTrailing();
         if (!sql.stripTrailing().endsWith(";") && replacement.endsWith(";")) {

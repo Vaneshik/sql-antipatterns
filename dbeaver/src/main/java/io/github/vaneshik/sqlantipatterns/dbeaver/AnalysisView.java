@@ -2,7 +2,6 @@ package io.github.vaneshik.sqlantipatterns.dbeaver;
 
 import io.github.vaneshik.sqlantipatterns.Analyzer;
 import io.github.vaneshik.sqlantipatterns.PlanNode;
-import io.github.vaneshik.sqlantipatterns.QueryAdvice;
 import java.util.List;
 import org.eclipse.core.runtime.jobs.Job;
 import org.eclipse.jface.dialogs.MessageDialog;
@@ -37,7 +36,7 @@ public final class AnalysisView extends ViewPart {
     private Button apply;
     private Button after;
     private EditorSnapshot source;
-    private QueryAdvice advice;
+    private Analyzer.Result advice;
     private Job job;
     private long generation;
     private final IDocumentListener edits = new IDocumentListener() {
@@ -67,7 +66,7 @@ public final class AnalysisView extends ViewPart {
         apply.setEnabled(false);
         apply.addListener(SWT.Selection, event -> {
             try {
-                source.apply(advice.suggestedSql());
+                source.apply(advice.optimized().sql());
                 apply.setEnabled(false);
                 status.setText("Исправление применено. Undo доступен в SQL-редакторе. Повторите анализ для нового текста.");
             } catch (Exception exception) {
@@ -146,19 +145,18 @@ public final class AnalysisView extends ViewPart {
         this.job = job;
     }
 
-    void complete(long request, QueryAdvice result) {
+    void complete(long request, Analyzer.Result result) {
         if (status.isDisposed() || request != generation) {
             return;
         }
         advice = result;
         boolean current = source.isCurrent();
-        apply.setEnabled(current && result.suggestedSql() != null);
-        after.setEnabled(result.after() != null);
-        suggestedSql.setText(result.suggestedSql() == null ? "Для этого запроса автоматическое исправление отсутствует."
-                : result.suggestedSql());
-        long count = result.before().rules().stream().filter(rule -> rule.status() == Analyzer.Status.FOUND).count();
-        status.setText(current ? "Найдено " + count + ". PostgreSQL · Calcite 1.42 · ключи PK / UNIQUE NOT NULL. "
-                + "Эффект на время выполнения требует измерения."
+        apply.setEnabled(current && result.optimized().changed());
+        after.setEnabled(result.optimized().changed());
+        suggestedSql.setText(result.optimized().changed() ? result.optimized().sql()
+                : "Для этого запроса автоматическое исправление отсутствует.");
+        long count = result.rules().stream().filter(rule -> rule.status() == Analyzer.Status.FOUND).count();
+        status.setText(current ? "Найдено " + count + " · Calcite 1.42 · PK / UNIQUE NOT NULL"
                 : "Результат относится к предыдущему тексту или подключению. Повторите анализ.");
         renderPlan();
     }
@@ -183,11 +181,10 @@ public final class AnalysisView extends ViewPart {
         if (advice == null) {
             return;
         }
-        Analyzer.Result result = after.getSelection() ? advice.after() : advice.before();
         tree.removeAll();
-        addNode(new TreeItem(tree, SWT.NONE), result.tree());
+        addNode(new TreeItem(tree, SWT.NONE), after.getSelection() ? advice.optimized().tree() : advice.tree());
         findings.removeAll();
-        for (Analyzer.RuleResult rule : result.rules()) {
+        for (Analyzer.RuleResult rule : after.getSelection() ? advice.optimized().rules() : advice.rules()) {
             var item = new TableItem(findings, SWT.NONE);
             item.setText(new String[] {switch (rule.status()) {
                 case FOUND -> "Найдено";
@@ -235,7 +232,9 @@ public final class AnalysisView extends ViewPart {
 
     private void highlight(TreeItem item, List<Integer> matches) {
         var node = (PlanNode) item.getData();
-        item.setForeground(matches.contains(node.id()) ? tree.getDisplay().getSystemColor(SWT.COLOR_DARK_RED) : null);
+        item.setFont(matches.contains(node.id()) ? JFaceResources.getFontRegistry().getBold(JFaceResources.DEFAULT_FONT) : null);
+        item.setBackground(matches.contains(node.id()) ? tree.getDisplay().getSystemColor(SWT.COLOR_INFO_BACKGROUND) : null);
+        item.setForeground(matches.contains(node.id()) ? tree.getDisplay().getSystemColor(SWT.COLOR_INFO_FOREGROUND) : null);
         for (TreeItem child : item.getItems()) {
             highlight(child, matches);
         }

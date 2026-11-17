@@ -1,7 +1,7 @@
 package io.github.vaneshik.sqlantipatterns.dbeaver;
 
+import io.github.vaneshik.sqlantipatterns.Analyzer;
 import io.github.vaneshik.sqlantipatterns.PostgresSchema;
-import io.github.vaneshik.sqlantipatterns.QueryAdvice;
 import org.eclipse.core.commands.AbstractHandler;
 import org.eclipse.core.commands.ExecutionEvent;
 import org.eclipse.core.runtime.IProgressMonitor;
@@ -41,10 +41,12 @@ public final class AnalyzeHandler extends AbstractHandler {
                         var schema = PostgresSchema.load(jdbc, source.sql());
                         monitor.worked(1);
                         if (monitor.isCanceled()) {
-                            display.asyncExec(() -> view.cancelled(request));
+                            if (!display.isDisposed()) {
+                                display.asyncExec(() -> view.cancelled(request));
+                            }
                             return Status.CANCEL_STATUS;
                         }
-                        var advice = QueryAdvice.analyze(source.sql(), schema);
+                        var advice = new Analyzer().analyze(source.sql(), schema);
                         if (!display.isDisposed()) {
                             display.asyncExec(() -> {
                                 if (monitor.isCanceled()) {

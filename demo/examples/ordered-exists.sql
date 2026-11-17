@@ -1,0 +1,6 @@
+SELECT DISTINCT c.id, c.name
+FROM customer c
+JOIN orders o ON o.customer_id = c.id
+WHERE o.status = 'paid' OR o.status = 'new'
+ORDER BY c.id
+LIMIT 10 OFFSET 5;

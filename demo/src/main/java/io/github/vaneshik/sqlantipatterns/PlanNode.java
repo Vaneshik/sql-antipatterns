@@ -16,6 +16,7 @@ import org.apache.calcite.util.Pair;
 public record PlanNode(int id, String type, Map<String, String> attributes,
                        List<String> fields, List<PlanNode> inputs, List<Subquery> subqueries) {
     public record Subquery(String operator, PlanNode plan) {}
+
     static PlanNode from(RelNode rel) {
         Map<String, String> attributes = new LinkedHashMap<>();
         rel.explain(new RelWriterImpl(new PrintWriter(Writer.nullWriter())) {

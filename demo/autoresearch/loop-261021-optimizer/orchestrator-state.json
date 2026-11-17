@@ -1,0 +1,42 @@
+{
+  "goal": "Improve readable, equivalent SQL rewrites on the pinned 24-query corpus",
+  "archetype": "optimize-metric",
+  "predicate": "python3 /private/tmp/sql-optimizer-eval/run.py demo/target/sql-demo.jar",
+  "terminal_choice": "verified-draft-pr-no-deploy",
+  "cycle": 3,
+  "units_remaining": [
+    9,
+    0
+  ],
+  "pipeline_log": [
+    {
+      "hop": "plan",
+      "outcome": "progressed",
+      "coverage": "6/18",
+      "comparisons": 768
+    },
+    {
+      "hop": "loop",
+      "outcome": "progressed",
+      "coverage": "18/18",
+      "guard": "155 tests, 768 SQLite 3.50.4 comparisons"
+    },
+    {
+      "hop": "verify",
+      "outcome": "progressed",
+      "holdout": "12 queries, 384 comparisons",
+      "independent_review": "No material defect found; PostgreSQL execution not verified"
+    }
+  ],
+  "errors_remaining": 0,
+  "regression_verdict": "STABLE",
+  "untested_gaps": 0,
+  "pending_verify": false,
+  "units": 0,
+  "plateau": false,
+  "ceiling": false,
+  "max_cycles": 12,
+  "baseline": "4163662793c946c4cadda03e9552afaa57c0fffd",
+  "corpus_sha256": "bfb7fae4ff3a9bb36fcc7b8746af8f6c0d2d1adfb14b5b1ad5e3afc75dbd39c9",
+  "current_incumbent": "9dd9fa5"
+}

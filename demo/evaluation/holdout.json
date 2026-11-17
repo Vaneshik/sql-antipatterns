@@ -1,0 +1,142 @@
+[
+  {
+    "id": "composed-page",
+    "sql": "SELECT DISTINCT buyer.id AS number, buyer.name FROM customer buyer LEFT JOIN orders purchase ON purchase.customer_id = buyer.id WHERE purchase.status = 'paid' ORDER BY number DESC LIMIT 2",
+    "required": [
+      "EXISTS",
+      "ORDER BY"
+    ],
+    "forbidden": [
+      "JOIN",
+      "DISTINCT"
+    ],
+    "ordered": true
+  },
+  {
+    "id": "quoted-projection",
+    "sql": "SELECT DISTINCT \"Buyer\".id AS \"select\", UPPER(\"Buyer\".name) AS \"Name\" FROM customer \"Buyer\" JOIN orders \"Purchase\" ON \"Purchase\".customer_id = \"Buyer\".id ORDER BY \"select\"",
+    "required": [
+      "EXISTS",
+      "\"select\""
+    ],
+    "forbidden": [
+      "JOIN",
+      "DISTINCT"
+    ],
+    "ordered": true
+  },
+  {
+    "id": "transformed-key-bag",
+    "sql": "SELECT DISTINCT MOD(c.id, 2) AS bucket FROM customer c JOIN orders o ON o.customer_id = c.id",
+    "required": [
+      "SELECT DISTINCT",
+      "EXISTS"
+    ],
+    "forbidden": [
+      "JOIN"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "on-disjunction",
+    "sql": "SELECT DISTINCT c.id FROM customer c JOIN orders o ON o.customer_id = c.id OR o.customer_id = c.id + 1",
+    "required": [
+      "EXISTS"
+    ],
+    "forbidden": [
+      "JOIN",
+      "DISTINCT"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "nullable-expression",
+    "sql": "SELECT DISTINCT COALESCE(c.name, 'missing') AS name FROM customer c JOIN orders o ON o.customer_id = c.id WHERE o.status <> 'cancelled'",
+    "required": [
+      "EXISTS",
+      "SELECT DISTINCT",
+      "COALESCE"
+    ],
+    "forbidden": [
+      "JOIN"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "having-expression",
+    "sql": "SELECT customer_id + 1 AS next_id, COUNT(*) AS n FROM orders GROUP BY customer_id + 1 HAVING customer_id + 1 > 2 AND COUNT(*) > 1",
+    "required": [
+      "WHERE",
+      "HAVING"
+    ],
+    "forbidden": [],
+    "ordered": false
+  },
+  {
+    "id": "having-reordered",
+    "sql": "SELECT customer_id, COUNT(*) AS n FROM orders GROUP BY customer_id HAVING COUNT(*) > 0 AND (customer_id IS NULL OR customer_id < 3)",
+    "required": [
+      "WHERE",
+      "HAVING"
+    ],
+    "forbidden": [],
+    "ordered": false
+  },
+  {
+    "id": "preserve-having-or",
+    "sql": "SELECT customer_id, COUNT(*) AS n FROM orders GROUP BY customer_id HAVING customer_id IS NULL OR COUNT(*) > 1",
+    "required": [
+      "HAVING"
+    ],
+    "forbidden": [
+      "WHERE"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "preserve-outer-or",
+    "sql": "SELECT c.id, o.id AS order_id FROM customer c LEFT JOIN orders o ON o.customer_id = c.id WHERE o.status = 'paid' OR o.id IS NULL",
+    "required": [
+      "LEFT JOIN"
+    ],
+    "forbidden": [
+      "INNER JOIN",
+      "EXISTS"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "preserve-right-expression",
+    "sql": "SELECT DISTINCT c.id, COALESCE(o.status, 'missing') AS status FROM customer c JOIN orders o ON o.customer_id = c.id",
+    "required": [
+      "DISTINCT",
+      "JOIN"
+    ],
+    "forbidden": [
+      "EXISTS"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "preserve-global-empty",
+    "sql": "SELECT COUNT(*) AS n FROM orders HAVING FALSE",
+    "required": [
+      "HAVING"
+    ],
+    "forbidden": [
+      "WHERE"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "preserve-not-in",
+    "sql": "SELECT name FROM customer WHERE id NOT IN (SELECT customer_id FROM orders WHERE status IS NULL)",
+    "required": [
+      "NOT IN"
+    ],
+    "forbidden": [
+      "NOT EXISTS"
+    ],
+    "ordered": false
+  }
+]

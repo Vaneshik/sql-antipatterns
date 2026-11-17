@@ -43,23 +43,26 @@ class PostgresIntegrationTest {
     @ValueSource(strings = {
             "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON c.id=o.customer_id WHERE o.status='paid'",
             "SELECT DISTINCT c.id FROM customer c JOIN orders o ON c.id=o.customer_id WHERE name='Alice'",
+            "SELECT DISTINCT c.name FROM customer c JOIN orders o ON c.id=o.customer_id",
             "SELECT DISTINCT id, name FROM customer",
             "SELECT c.id, o.status FROM customer c LEFT JOIN orders o ON c.id=o.customer_id WHERE o.status='paid'",
             "SELECT customer_id, count(*) AS total FROM orders GROUP BY customer_id HAVING customer_id > 1",
+            "SELECT customer_id, count(*) AS total FROM orders GROUP BY customer_id HAVING customer_id > 1 AND count(*) > 0",
+            "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON c.id=o.customer_id ORDER BY c.id LIMIT 2 OFFSET 1",
             "SELECT DISTINCT \"Buyer\".id AS \"Number\" FROM customer \"Buyer\" JOIN orders \"Order\" ON \"Buyer\".id=\"Order\".customer_id",
             "SELECT c.id FROM customer c LEFT JOIN orders o ON c.id=o.customer_id WHERE o.status='paid12345678901234567890'"
     })
     void preservesBagsAndOutputNamesOnPostgres(String sql) throws Exception {
-        var advice = QueryAdvice.analyze(sql, PostgresSchema.load(connection, sql));
-        assertNotNull(advice.suggestedSql(), advice.before().rules().toString());
-        String rewritten = advice.suggestedSql().strip().replaceFirst(";$", "");
+        var advice = new Analyzer().analyze(sql, PostgresSchema.load(connection, sql));
+        assertTrue(advice.optimized().changed(), advice.rules().toString());
+        String rewritten = advice.optimized().sql().strip().replaceFirst(";$", "");
         try (var statement = connection.createStatement(); var rows = statement.executeQuery("""
                 SELECT count(*) FROM (
                     ((%s) EXCEPT ALL (%s)) UNION ALL ((%s) EXCEPT ALL (%s))
                 ) difference
                 """.formatted(sql, rewritten, rewritten, sql))) {
             assertTrue(rows.next());
-            assertEquals(0, rows.getInt(1), advice.suggestedSql());
+            assertEquals(0, rows.getInt(1), advice.optimized().sql());
         }
         try (var first = connection.prepareStatement(sql); var second = connection.prepareStatement(rewritten)) {
             var before = first.getMetaData();
@@ -83,9 +86,9 @@ class PostgresIntegrationTest {
             statement.execute(ddl);
         }
         String sql = "SELECT DISTINCT id FROM uncertain";
-        var advice = QueryAdvice.analyze(sql, PostgresSchema.load(connection, sql));
-        assertNull(advice.suggestedSql());
-        assertTrue(advice.before().rules().stream().noneMatch(rule -> rule.status() == Analyzer.Status.FOUND));
+        var advice = new Analyzer().analyze(sql, PostgresSchema.load(connection, sql));
+        assertFalse(advice.optimized().changed());
+        assertTrue(advice.rules().stream().noneMatch(rule -> rule.status() == Analyzer.Status.FOUND));
     }
 
     @Test
@@ -98,9 +101,9 @@ class PostgresIntegrationTest {
                     """);
         }
         String sql = "SELECT DISTINCT \"Key\" FROM advice_test.\"Mixed Case\"";
-        var advice = QueryAdvice.analyze(sql, PostgresSchema.load(connection, sql));
-        assertNotNull(advice.suggestedSql());
-        try (var statement = connection.createStatement(); var rows = statement.executeQuery(advice.suggestedSql())) {
+        var advice = new Analyzer().analyze(sql, PostgresSchema.load(connection, sql));
+        assertTrue(advice.optimized().changed());
+        try (var statement = connection.createStatement(); var rows = statement.executeQuery(advice.optimized().sql())) {
             assertTrue(rows.next());
             assertEquals(1, rows.getInt(1));
             assertTrue(rows.next());
@@ -117,6 +120,26 @@ class PostgresIntegrationTest {
         String sql = "SELECT DISTINCT id FROM customer";
         var schema = PostgresSchema.load(connection, sql);
         assertEquals(java.util.Set.of("customer"), schema.getTableNames());
-        assertNotNull(QueryAdvice.analyze(sql, schema).suggestedSql());
+        assertTrue(new Analyzer().analyze(sql, schema).optimized().changed());
+    }
+
+    @Test
+    void doesNotUseNestedJoinFindingToRewriteOuterJoin() throws Exception {
+        String sql = "SELECT c.id FROM customer c LEFT JOIN (SELECT b.customer_id FROM orders b "
+                + "LEFT JOIN customer x ON b.customer_id=x.id WHERE x.name='Alice') o ON c.id=o.customer_id";
+        var advice = new Analyzer().analyze(sql, PostgresSchema.load(connection, sql));
+        assertTrue(advice.rules().stream().anyMatch(rule -> rule.ruleId().equals("left-join-filter")));
+        assertFalse(advice.optimized().changed());
+    }
+
+    @Test
+    void preservesDeclaredDecimalPrecisionAndTimestampFraction() throws Exception {
+        try (var statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE typed (id integer PRIMARY KEY, amount numeric(12,4), created timestamp(6))");
+        }
+        String sql = "SELECT DISTINCT id, amount, created FROM typed";
+        var advice = new Analyzer().analyze(sql, PostgresSchema.load(connection, sql));
+        assertTrue(advice.tree().fields().get(1).contains("DECIMAL(12, 4)"));
+        assertTrue(advice.tree().fields().get(2).contains("TIMESTAMP(6)"));
     }
 }

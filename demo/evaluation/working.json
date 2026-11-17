@@ -1,0 +1,276 @@
+[
+  {
+    "id": "existence-key",
+    "sql": "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON o.customer_id = c.id",
+    "required": [
+      "EXISTS"
+    ],
+    "forbidden": [
+      "SELECT DISTINCT",
+      "JOIN"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "existence-bag",
+    "sql": "SELECT DISTINCT c.name FROM customer c JOIN orders o ON o.customer_id = c.id",
+    "required": [
+      "SELECT DISTINCT",
+      "EXISTS"
+    ],
+    "forbidden": [
+      "JOIN"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "redundant-distinct",
+    "sql": "SELECT DISTINCT id, name FROM customer",
+    "required": [],
+    "forbidden": [
+      "DISTINCT"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "redundant-group",
+    "sql": "SELECT id, name FROM customer GROUP BY id, name",
+    "required": [],
+    "forbidden": [
+      "GROUP BY"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "having-key",
+    "sql": "SELECT customer_id, COUNT(*) AS n FROM orders GROUP BY customer_id HAVING customer_id > 2",
+    "required": [
+      "WHERE"
+    ],
+    "forbidden": [
+      "HAVING"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "left-filter",
+    "sql": "SELECT c.id, o.status FROM customer c LEFT JOIN orders o ON o.customer_id = c.id WHERE o.status = 'paid'",
+    "required": [
+      "INNER JOIN"
+    ],
+    "forbidden": [
+      "LEFT JOIN"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "existence-order",
+    "sql": "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON o.customer_id = c.id ORDER BY c.id DESC",
+    "required": [
+      "EXISTS",
+      "ORDER BY"
+    ],
+    "forbidden": [
+      "DISTINCT",
+      "JOIN"
+    ],
+    "ordered": true
+  },
+  {
+    "id": "existence-page",
+    "sql": "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON o.customer_id = c.id ORDER BY c.id LIMIT 3 OFFSET 1",
+    "required": [
+      "EXISTS",
+      "ORDER BY"
+    ],
+    "forbidden": [
+      "DISTINCT",
+      "JOIN"
+    ],
+    "ordered": true
+  },
+  {
+    "id": "existence-bag-order",
+    "sql": "SELECT DISTINCT c.name FROM customer c JOIN orders o ON o.customer_id = c.id ORDER BY c.name",
+    "required": [
+      "EXISTS",
+      "SELECT DISTINCT",
+      "ORDER BY"
+    ],
+    "forbidden": [
+      "JOIN"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "existence-or",
+    "sql": "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON o.customer_id = c.id WHERE o.status = 'paid' OR o.status IS NULL",
+    "required": [
+      "EXISTS"
+    ],
+    "forbidden": [
+      "DISTINCT",
+      "JOIN"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "existence-function",
+    "sql": "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON o.customer_id = c.id WHERE UPPER(o.status) = 'PAID'",
+    "required": [
+      "EXISTS"
+    ],
+    "forbidden": [
+      "DISTINCT",
+      "JOIN"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "existence-on-filter",
+    "sql": "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON o.customer_id = c.id AND o.status = 'paid'",
+    "required": [
+      "EXISTS"
+    ],
+    "forbidden": [
+      "DISTINCT",
+      "JOIN"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "existence-projection",
+    "sql": "SELECT DISTINCT c.id, UPPER(c.name) AS display_name FROM customer c JOIN orders o ON o.customer_id = c.id",
+    "required": [
+      "EXISTS",
+      "UPPER"
+    ],
+    "forbidden": [
+      "DISTINCT",
+      "JOIN"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "existence-projection-bag",
+    "sql": "SELECT DISTINCT UPPER(c.name) AS display_name FROM customer c JOIN orders o ON o.customer_id = c.id",
+    "required": [
+      "EXISTS",
+      "SELECT DISTINCT",
+      "UPPER"
+    ],
+    "forbidden": [
+      "JOIN"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "existence-inequality",
+    "sql": "SELECT DISTINCT c.id, c.name FROM customer c JOIN orders o ON o.customer_id > c.id",
+    "required": [
+      "EXISTS"
+    ],
+    "forbidden": [
+      "DISTINCT",
+      "JOIN"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "having-mixed",
+    "sql": "SELECT customer_id, COUNT(*) AS n FROM orders GROUP BY customer_id HAVING customer_id > 2 AND COUNT(*) > 1",
+    "required": [
+      "WHERE",
+      "HAVING"
+    ],
+    "forbidden": [],
+    "ordered": false
+  },
+  {
+    "id": "having-mixed-null",
+    "sql": "SELECT customer_id, COUNT(*) AS n FROM orders GROUP BY customer_id HAVING customer_id IS NOT NULL AND COUNT(*) > 1",
+    "required": [
+      "WHERE",
+      "HAVING"
+    ],
+    "forbidden": [],
+    "ordered": false
+  },
+  {
+    "id": "having-mixed-or",
+    "sql": "SELECT customer_id, COUNT(*) AS n FROM orders GROUP BY customer_id HAVING (customer_id = 1 OR customer_id = 2) AND COUNT(*) > 1",
+    "required": [
+      "WHERE",
+      "HAVING"
+    ],
+    "forbidden": [],
+    "ordered": false
+  },
+  {
+    "id": "preserve-left-null",
+    "sql": "SELECT c.id, o.status FROM customer c LEFT JOIN orders o ON o.customer_id = c.id WHERE o.id IS NULL",
+    "required": [
+      "LEFT JOIN"
+    ],
+    "forbidden": [
+      "INNER JOIN"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "preserve-aggregate-or",
+    "sql": "SELECT customer_id, COUNT(*) AS n FROM orders GROUP BY customer_id HAVING customer_id > 2 OR COUNT(*) > 1",
+    "required": [
+      "HAVING"
+    ],
+    "forbidden": [
+      "WHERE"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "preserve-right-projection",
+    "sql": "SELECT DISTINCT c.id, o.status FROM customer c JOIN orders o ON o.customer_id = c.id",
+    "required": [
+      "DISTINCT",
+      "JOIN"
+    ],
+    "forbidden": [
+      "EXISTS"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "preserve-null-comparison",
+    "sql": "SELECT id, name FROM customer WHERE name = NULL",
+    "required": [
+      "= NULL"
+    ],
+    "forbidden": [
+      "IS NULL"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "preserve-global-aggregate",
+    "sql": "SELECT COUNT(*) AS n FROM orders HAVING COUNT(*) > 1",
+    "required": [
+      "HAVING"
+    ],
+    "forbidden": [
+      "WHERE"
+    ],
+    "ordered": false
+  },
+  {
+    "id": "preserve-not-in-null",
+    "sql": "SELECT id, name FROM customer WHERE id NOT IN (SELECT customer_id FROM orders)",
+    "required": [
+      "NOT IN"
+    ],
+    "forbidden": [
+      "NOT EXISTS"
+    ],
+    "ordered": false
+  }
+]

@@ -50,6 +50,9 @@ def main():
     preferences.mkdir(parents=True)
     (preferences / "org.jkiss.dbeaver.ui.statistics.prefs").write_text(
         "eclipse.preferences.version=1\nfeature.tracking.skipConfirmation=true\nfeature.tracking.enabled=false\n")
+    (preferences / "org.jkiss.dbeaver.core.prefs").write_text(
+        "eclipse.preferences.version=1\nsample.database.canceled=true\n"
+        "org.jkiss.dbeaver.core.confirm.exit=never\n")
     launcher = next((platform / "plugins").glob("org.eclipse.equinox.launcher_*.jar"))
     with (target / "workbench.log").open("w") as log:
         run(java_home / "bin/java", "-XstartOnFirstThread", f"-Duser.home={home}",

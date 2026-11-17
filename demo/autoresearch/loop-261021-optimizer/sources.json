@@ -1,0 +1,47 @@
+{
+  "review_date": "2026-10-21",
+  "sources": [
+    {
+      "title": "WeTune",
+      "year": 2022,
+      "url": "https://ipads.se.sjtu.edu.cn/_media/publications/wetune_final.pdf",
+      "reviewed": "Rule templates, constraints and verification, sections 3–5",
+      "application": "Explicit key, projection and NULL conditions. WeTune's SMT verifier is not implemented here."
+    },
+    {
+      "title": "LLM-R2",
+      "year": 2024,
+      "url": "https://www.vldb.org/pvldb/vol18/p53-yuan.pdf",
+      "reviewed": "Introduction and rule-selection approach",
+      "application": "Separate rule application from rule selection. Runtime LLM and learned ranking are outside this experiment."
+    },
+    {
+      "title": "R-Bot",
+      "year": 2025,
+      "url": "https://www.vldb.org/pvldb/vol18/p5031-li.pdf",
+      "reviewed": "Rule specifications, workflow and experimental setup",
+      "application": "Ground transformations in preconditions; distinguish selected corpus coverage from general SQL support."
+    },
+    {
+      "title": "QO-Verify",
+      "year": 2026,
+      "url": "https://www.vldb.org/cidrdb/papers/2026/p33-narasayya.pdf",
+      "reviewed": "Sections 1–2 and experimental verification limits",
+      "application": "Sample equality and reparsing are not formal proof. QO-Verify checks equivalent expression groups; it is not implemented here."
+    },
+    {
+      "title": "ReSequel",
+      "year": 2026,
+      "url": "https://arxiv.org/html/2606.20853v2",
+      "reviewed": "Sections 5–6 and system limitations",
+      "application": "Varied database instances and a separate acceptance corpus. Correctness comparisons do not establish runtime speedup."
+    },
+    {
+      "title": "SQLSolver",
+      "year": 2024,
+      "url": "https://github.com/SJTU-IPADS/SQLSolver",
+      "reviewed": "Primary implementation README, API and result states",
+      "application": "Possible external equivalence baseline; not integrated or executed."
+    }
+  ]
+}

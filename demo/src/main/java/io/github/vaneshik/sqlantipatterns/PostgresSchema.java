@@ -29,22 +29,18 @@ import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.util.ImmutableBitSet;
 
 public final class PostgresSchema {
-    public static SqlNode parse(String sql) throws SqlParseException {
-        String statement = sql.strip();
-        if (statement.endsWith(";")) {
-            statement = statement.substring(0, statement.length() - 1);
-        }
-        return SqlParser.create(statement, SqlParser.config()
-                .withUnquotedCasing(Casing.TO_LOWER).withQuotedCasing(Casing.UNCHANGED)
-                .withCaseSensitive(true)).parseQuery();
-    }
-
     public static SchemaPlus load(Connection connection, String sql) throws SQLException, SqlParseException {
         if (!"PostgreSQL".equals(connection.getMetaData().getDatabaseProductName())) {
             throw new IllegalArgumentException("MVP поддерживает подключения PostgreSQL.");
         }
         Set<List<String>> tables = new LinkedHashSet<>();
-        parse(sql).accept(new SqlBasicVisitor<Void>() {
+        String queryText = sql.strip();
+        if (queryText.endsWith(";")) {
+            queryText = queryText.substring(0, queryText.length() - 1);
+        }
+        SqlParser.create(queryText, SqlParser.config()
+                .withUnquotedCasing(Casing.TO_LOWER).withQuotedCasing(Casing.UNCHANGED)
+                .withCaseSensitive(true)).parseQuery().accept(new SqlBasicVisitor<Void>() {
             @Override
             public Void visit(SqlCall call) {
                 if (call instanceof SqlWith) {
@@ -133,11 +129,17 @@ public final class PostgresSchema {
                             index = nextIndex;
                         }
                         int attributeNumber = result.getInt(2);
+                        int position = -1;
                         for (int i = 0; i < columns.size(); i++) {
                             if (columns.get(i).number() == attributeNumber) {
-                                positions.add(i);
+                                position = i;
+                                break;
                             }
                         }
+                        if (position < 0) {
+                            throw new SQLException("Метаданные колонок и ключей изменились. Повторите анализ.");
+                        }
+                        positions.add(position);
                         strict &= result.getBoolean(3);
                     }
                     if (strict && !positions.isEmpty()) {
@@ -214,13 +216,17 @@ public final class PostgresSchema {
                 if (scale < 0 || scale > precision) {
                     throw new IllegalArgumentException("NUMERIC с таким scale пока не поддерживается.");
                 }
-                return factory.createSqlType(type, precision, scale);
+                RelDataType decimal = factory.createSqlType(type, precision, scale);
+                if (decimal.getPrecision() != precision || decimal.getScale() != scale) {
+                    throw new IllegalArgumentException("Точность NUMERIC выходит за пределы типов Calcite.");
+                }
+                return decimal;
             }
             if (type == SqlTypeName.DECIMAL) {
                 throw new IllegalArgumentException("Для NUMERIC в MVP нужны явные precision и scale.");
             }
-            if (type == SqlTypeName.TIMESTAMP && modifier >= 0) {
-                return factory.createSqlType(type, modifier);
+            if (type == SqlTypeName.TIMESTAMP) {
+                return factory.createSqlType(type, modifier >= 0 ? modifier : 6);
             }
             return factory.createSqlType(type);
         }

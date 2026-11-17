@@ -13,6 +13,9 @@ import org.eclipse.swt.widgets.Display;
 import org.eclipse.swt.widgets.Label;
 import org.eclipse.swt.widgets.Table;
 import org.eclipse.swt.widgets.Tree;
+import org.eclipse.swt.graphics.GC;
+import org.eclipse.swt.graphics.Image;
+import org.eclipse.swt.graphics.ImageLoader;
 import org.eclipse.ui.IStartup;
 import org.eclipse.ui.PlatformUI;
 import org.eclipse.ui.handlers.IHandlerService;
@@ -77,6 +80,9 @@ public final class WorkbenchSmoke implements IStartup {
         editor = (SQLEditor) page.openEditor(new StringEditorInput("MVP smoke.sql", script, false, "UTF-8"),
                 "org.jkiss.dbeaver.ui.editors.sql.SQLEditor");
         editor.setDataSourceContainer(connection);
+        editor.getSelectionProvider().setSelection(new TextSelection(25, 0));
+        require(EditorSnapshot.capture(editor).sql().strip().replaceFirst(";$", "").equals(SQL),
+                "Caret extraction selected a different statement");
         editor.getSelectionProvider().setSelection(new TextSelection(11, SQL.length()));
         page.activate(editor);
         var handler = PlatformUI.getWorkbench().getService(IHandlerService.class);
@@ -107,6 +113,29 @@ public final class WorkbenchSmoke implements IStartup {
             require(controls.stream().anyMatch(control -> control instanceof Table table
                     && java.util.Arrays.stream(table.getItems()).anyMatch(item -> item.getText(0).equals("Найдено")
                         && item.getText(1).contains("DISTINCT"))), "Missing finding");
+            var after = controls.stream().filter(control -> control instanceof Button button
+                    && button.getText().equals("План после исправления"))
+                    .map(Button.class::cast).findFirst().orElseThrow();
+            after.setSelection(true);
+            after.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
+            require(controls.stream().anyMatch(control -> control instanceof Tree tree && tree.getItemCount() > 0
+                    && tree.getItem(0).getText().contains("LogicalProject")), "After toggle did not rebuild tree");
+            after.setSelection(false);
+            after.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
+            var shell = view.getSite().getShell();
+            var size = shell.getSize();
+            var image = new Image(shell.getDisplay(), size.x, size.y);
+            var graphics = new GC(image);
+            try {
+                if (shell.print(graphics)) {
+                    var loader = new ImageLoader();
+                    loader.data = new org.eclipse.swt.graphics.ImageData[] {image.getImageData()};
+                    loader.save(System.getProperty("vkr.smoke.result") + ".png", SWT.IMAGE_PNG);
+                }
+            } finally {
+                graphics.dispose();
+                image.dispose();
+            }
             var source = EditorSnapshot.capture(editor);
             apply.notifyListeners(SWT.Selection, new org.eclipse.swt.widgets.Event());
             require(editor.getDocument().get().contains("EXISTS"), "Apply did not update the editor");
@@ -147,7 +176,7 @@ public final class WorkbenchSmoke implements IStartup {
 
     private void finish(Throwable failure) {
         try {
-            String result = "PASS — command, PostgreSQL metadata, Calcite OSGi loading, finding, tree, selection, apply, Undo, stale edit\n";
+            String result = "PASS — command, PostgreSQL metadata, Calcite OSGi loading, finding, before/after tree, caret, selection, apply, Undo, stale edit\n";
             if (failure != null) {
                 var writer = new java.io.StringWriter();
                 failure.printStackTrace(new java.io.PrintWriter(writer));
@@ -160,6 +189,7 @@ public final class WorkbenchSmoke implements IStartup {
         if (editor != null) {
             PlatformUI.getWorkbench().getActiveWorkbenchWindow().getActivePage().closeEditor(editor, false);
         }
+        DBWorkbench.getPlatform().getPreferenceStore().setValue("org.jkiss.dbeaver.core.confirm.exit", "never");
         PlatformUI.getWorkbench().close();
     }
 }

@@ -33,4 +33,10 @@
     <view id="io.github.vaneshik.sqlantipatterns.view" name="SQL-антипаттерны"
           class="io.github.vaneshik.sqlantipatterns.dbeaver.AnalysisView" restorable="true"/>
   </extension>
+  <extension point="org.eclipse.ui.perspectiveExtensions">
+    <perspectiveExtension targetID="*">
+      <view id="io.github.vaneshik.sqlantipatterns.view" relative="org.eclipse.ui.editorss"
+            relationship="bottom" ratio="0.5" visible="false"/>
+    </perspectiveExtension>
+  </extension>
 </plugin>
