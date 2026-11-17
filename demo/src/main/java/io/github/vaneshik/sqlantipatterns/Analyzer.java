@@ -18,6 +18,7 @@ import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
+import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.sql.JoinConditionType;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlIdentifier;
@@ -49,6 +50,11 @@ public final class Analyzer {
 
     public Result analyze(String sql)
             throws SqlParseException, ValidationException, RelConversionException {
+        return analyze(sql, DemoSchema.create());
+    }
+
+    public Result analyze(String sql, SchemaPlus schema)
+            throws SqlParseException, ValidationException, RelConversionException {
         String statement = sql.strip();
         if (statement.endsWith(";")) {
             statement = statement.substring(0, statement.length() - 1);
@@ -64,7 +70,7 @@ public final class Analyzer {
         }
         try (Planner planner = Frameworks.getPlanner(Frameworks.newConfigBuilder()
                 .parserConfig(parserConfig)
-                .defaultSchema(DemoSchema.create())
+                .defaultSchema(schema)
                 .sqlToRelConverterConfig(SqlToRelConverter.config()
                         .withRelBuilderConfigTransform(config -> config.withAggregateUnique(true).withSimplify(false)))
                 .build())) {
@@ -267,7 +273,10 @@ public final class Analyzer {
                 java.util.Arrays.stream(nodes).map(RelNode::getId).toList());
     }
 
-    private static boolean isBaseTable(SqlNode node) {
+    static boolean isBaseTable(SqlNode node) {
+        if (node == null) {
+            return false;
+        }
         if (node.getKind() == SqlKind.AS) {
             node = ((SqlCall) node).operand(0);
         }

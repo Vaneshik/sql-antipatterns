@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?eclipse version="3.4"?>
+<plugin>
+  <extension point="org.eclipse.ui.commands">
+    <command id="io.github.vaneshik.sqlantipatterns.analyze" name="Анализ SQL-антипаттернов"/>
+  </extension>
+  <extension point="org.eclipse.ui.handlers">
+    <handler commandId="io.github.vaneshik.sqlantipatterns.analyze"
+             class="io.github.vaneshik.sqlantipatterns.dbeaver.AnalyzeHandler">
+      <activeWhen>
+        <with variable="activeEditor">
+          <instanceof value="org.jkiss.dbeaver.ui.editors.sql.SQLEditor"/>
+        </with>
+      </activeWhen>
+    </handler>
+  </extension>
+  <extension point="org.eclipse.ui.menus">
+    <menuContribution locationURI="popup:org.jkiss.dbeaver.ui.editors.sql.SQLEditor.EditorContext?after=sql.additions">
+      <command commandId="io.github.vaneshik.sqlantipatterns.analyze" style="push"/>
+    </menuContribution>
+    <menuContribution locationURI="menu:org.eclipse.ui.main.menu?after=additions">
+      <menu id="io.github.vaneshik.sqlantipatterns.menu" label="SQL-антипаттерны">
+        <command commandId="io.github.vaneshik.sqlantipatterns.analyze" style="push"/>
+      </menu>
+    </menuContribution>
+  </extension>
+  <extension point="org.eclipse.ui.bindings">
+    <key commandId="io.github.vaneshik.sqlantipatterns.analyze"
+         contextId="org.jkiss.dbeaver.ui.editors.sql"
+         schemeId="org.eclipse.ui.defaultAcceleratorConfiguration" sequence="M1+M3+A"/>
+  </extension>
+  <extension point="org.eclipse.ui.views">
+    <view id="io.github.vaneshik.sqlantipatterns.view" name="SQL-антипаттерны"
+          class="io.github.vaneshik.sqlantipatterns.dbeaver.AnalysisView" restorable="true"/>
+  </extension>
+</plugin>
