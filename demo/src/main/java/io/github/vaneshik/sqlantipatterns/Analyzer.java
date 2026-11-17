@@ -14,11 +14,13 @@ import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rel.core.Sort;
 import org.apache.calcite.rel.core.TableScan;
+import org.apache.calcite.rel.type.RelDataTypeSystemImpl;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexOver;
 import org.apache.calcite.rex.RexUtil;
+import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.sql.JoinConditionType;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlIdentifier;
@@ -29,6 +31,7 @@ import org.apache.calcite.sql.SqlOrderBy;
 import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
+import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
 import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.tools.Planner;
@@ -55,6 +58,11 @@ public final class Analyzer {
 
     public Result analyze(String sql)
             throws SqlParseException, ValidationException, RelConversionException {
+        return analyze(sql, DemoSchema.create());
+    }
+
+    public Result analyze(String sql, SchemaPlus schema)
+            throws SqlParseException, ValidationException, RelConversionException {
         String statement = sql.strip();
         if (statement.endsWith(";")) {
             statement = statement.substring(0, statement.length() - 1);
@@ -70,7 +78,13 @@ public final class Analyzer {
         }
         try (Planner planner = Frameworks.getPlanner(Frameworks.newConfigBuilder()
                 .parserConfig(parserConfig)
-                .defaultSchema(DemoSchema.create())
+                .defaultSchema(schema)
+                .typeSystem(new RelDataTypeSystemImpl() {
+                    @Override
+                    public int getMaxPrecision(SqlTypeName type) {
+                        return type == SqlTypeName.TIMESTAMP ? 6 : super.getMaxPrecision(type);
+                    }
+                })
                 .sqlToRelConverterConfig(SqlToRelConverter.config()
                         .withRelBuilderConfigTransform(config -> config.withAggregateUnique(true).withSimplify(false)))
                 .build())) {
