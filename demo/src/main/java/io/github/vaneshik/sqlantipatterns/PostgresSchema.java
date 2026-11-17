@@ -205,6 +205,7 @@ public final class PostgresSchema {
                 case "float8" -> SqlTypeName.DOUBLE;
                 case "date" -> SqlTypeName.DATE;
                 case "timestamp" -> SqlTypeName.TIMESTAMP;
+                case "timestamptz" -> SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE;
                 default -> throw new IllegalArgumentException("Тип PostgreSQL пока не поддерживается — " + postgresType);
             };
             if ((type == SqlTypeName.CHAR || type == SqlTypeName.VARCHAR) && modifier >= 4) {
@@ -225,7 +226,7 @@ public final class PostgresSchema {
             if (type == SqlTypeName.DECIMAL) {
                 throw new IllegalArgumentException("Для NUMERIC в MVP нужны явные precision и scale.");
             }
-            if (type == SqlTypeName.TIMESTAMP) {
+            if (type == SqlTypeName.TIMESTAMP || type == SqlTypeName.TIMESTAMP_WITH_LOCAL_TIME_ZONE) {
                 return factory.createSqlType(type, modifier >= 0 ? modifier : 6);
             }
             return factory.createSqlType(type);

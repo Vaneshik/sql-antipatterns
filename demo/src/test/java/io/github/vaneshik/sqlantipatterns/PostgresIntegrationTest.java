@@ -142,4 +142,43 @@ class PostgresIntegrationTest {
         assertTrue(advice.tree().fields().get(1).contains("DECIMAL(12, 4)"));
         assertTrue(advice.tree().fields().get(2).contains("TIMESTAMP(6)"));
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"timestamptz", "timestamptz(0)", "timestamptz(3)", "timestamptz(6)"})
+    void preservesTimestampWithTimeZoneAndItsPrecision(String postgresType) throws Exception {
+        try (var statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE events (id integer PRIMARY KEY, created " + postgresType + ")");
+            statement.execute("""
+                    INSERT INTO events VALUES
+                      (1, '2026-11-17 12:00:00.123456+00'),
+                      (2, '2026-11-17 15:00:00.123456+03'),
+                      (3, NULL), (4, '2026-11-17 12:00:01+00');
+                    SET LOCAL TIME ZONE 'Europe/Moscow';
+                    """);
+        }
+        String sql = "SELECT DISTINCT id, created FROM events WHERE created IS NOT NULL";
+        var advice = new Analyzer().analyze(sql, PostgresSchema.load(connection, sql));
+        int precision = postgresType.contains("(") ? Integer.parseInt(postgresType.substring(12, 13)) : 6;
+        assertEquals("created: TIMESTAMP_WITH_LOCAL_TIME_ZONE(" + precision + ")", advice.tree().fields().get(1));
+        assertTrue(advice.optimized().changed());
+        String rewritten = advice.optimized().sql().strip().replaceFirst(";$", "");
+        try (var statement = connection.createStatement(); var rows = statement.executeQuery("""
+                SELECT count(*) FROM (
+                  ((%s) EXCEPT ALL (%s)) UNION ALL ((%s) EXCEPT ALL (%s))
+                ) difference
+                """.formatted(sql, rewritten, rewritten, sql))) {
+            assertTrue(rows.next());
+            assertEquals(0, rows.getInt(1), rewritten);
+        }
+        String sameInstant = "SELECT a.id FROM events a JOIN events b ON a.created=b.created WHERE a.id=1 AND b.id=2";
+        var equality = new Analyzer().analyze(sameInstant, PostgresSchema.load(connection, sameInstant));
+        assertTrue(equality.plan().contains("LogicalJoin"));
+        try (var statement = connection.createStatement(); var rows = statement.executeQuery(sameInstant)) {
+            assertTrue(rows.next());
+            assertEquals(1, rows.getInt(1));
+            assertFalse(rows.next());
+        }
+        String unrelated = "SELECT id FROM events";
+        assertFalse(new Analyzer().analyze(unrelated, PostgresSchema.load(connection, unrelated)).plan().isBlank());
+    }
 }
