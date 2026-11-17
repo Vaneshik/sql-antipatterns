@@ -134,6 +134,33 @@ class MainTest {
         }
     }
 
+    @ParameterizedTest
+    @CsvSource({
+            "conditional-distinct, distinct, PROVED", "contradictory-filter, empty, PROVED",
+            "unused-left-join, join_remove, PROVED", "context-join, join_remove, PROVED",
+            "right-join-filter, outer_inner, PROVED", "disjoint-union, union, PROVED",
+            "overlapping-union, union, UNKNOWN", "fanout-left-join, join_remove, UNKNOWN"
+    })
+    void servesPropertyExamplesAndBothVersionsOfTheAnalysis(String example, String kind, String status) throws Exception {
+        var source = client.send(HttpRequest.newBuilder(base.resolve("/examples/" + example + ".sql"))
+                .GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, source.statusCode());
+        var response = analyze(source.body());
+        assertEquals(200, response.statusCode(), response.body());
+        var result = JSON.readTree(response.body());
+        var properties = result.path("properties");
+        assertTrue(properties.isArray());
+        boolean found = false;
+        for (var property : properties) {
+            if (property.path("kind").asText().equals(kind)) {
+                assertEquals(status, property.path("status").asText(), property.toString());
+                found = true;
+            }
+        }
+        assertTrue(found, response.body());
+        assertTrue(result.path("optimized").path("properties").isArray());
+    }
+
     private HttpResponse<String> analyze(String sql) throws Exception {
         return client.send(HttpRequest.newBuilder(base.resolve("/api/analyze"))
                 .header("Content-Type", "text/plain; charset=utf-8")

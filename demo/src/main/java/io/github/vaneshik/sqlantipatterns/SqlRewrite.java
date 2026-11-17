@@ -4,9 +4,14 @@ import java.util.ArrayList;
 import java.util.List;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Aggregate;
+import org.apache.calcite.rel.core.Filter;
+import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rel.core.Sort;
+import org.apache.calcite.rel.core.Union;
+import org.apache.calcite.sql.JoinConditionType;
 import org.apache.calcite.sql.JoinType;
+import org.apache.calcite.sql.SqlBasicCall;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlJoin;
@@ -25,6 +30,73 @@ import org.apache.calcite.sql.pretty.SqlPrettyWriter;
 import org.apache.calcite.util.Litmus;
 
 final class SqlRewrite {
+    static boolean applyProperties(SqlNode query, RelNode plan, List<PropertyAnalysis.Result> properties) {
+        if (query instanceof SqlBasicCall union && union.getKind() == SqlKind.UNION
+                && plan instanceof Union relUnion && !relUnion.all
+                && properties.stream().anyMatch(result -> result.kind().equals("union")
+                    && result.nodeId() == plan.getId() && result.status() == PropertyAnalysis.Status.PROVED)) {
+            union.setOperator(SqlStdOperatorTable.UNION_ALL);
+            return true;
+        }
+        if (!(query instanceof SqlSelect select) || select.getFetch() != null || select.getOffset() != null
+                || select.getOrderList() != null && !select.getOrderList().isEmpty()
+                || !select.getWindowList().isEmpty() || select.getHaving() != null) {
+            return false;
+        }
+        SqlNode from = select.getFrom();
+        if (!Analyzer.isBaseTable(from) && !(from instanceof SqlJoin join && !join.isNatural()
+                && join.getConditionType() == JoinConditionType.ON
+                && Analyzer.isBaseTable(join.getLeft()) && Analyzer.isBaseTable(join.getRight()))) {
+            return false;
+        }
+        RelNode node = plan;
+        while (node instanceof Project) {
+            node = node.getInput(0);
+        }
+        if (node instanceof Aggregate aggregate) {
+            if (aggregate.getGroupType() != Aggregate.Group.SIMPLE || !aggregate.getAggCallList().isEmpty()) {
+                return false;
+            }
+            for (PropertyAnalysis.Result property : properties) {
+                if (property.kind().equals("distinct") && property.nodeId() == aggregate.getId()
+                        && property.status() == PropertyAnalysis.Status.PROVED) {
+                    if (select.isDistinct()) {
+                        removeDistinct(select);
+                        return true;
+                    }
+                    if (select.getGroup() != null) {
+                        select.setGroupBy(null);
+                        return true;
+                    }
+                }
+            }
+            node = aggregate.getInput();
+        }
+        while (node instanceof Project || node instanceof Filter) {
+            node = node.getInput(0);
+        }
+        if (!(node instanceof Join join) || !(from instanceof SqlJoin sqlJoin)
+                || sqlJoin.getJoinType() != JoinType.LEFT && sqlJoin.getJoinType() != JoinType.RIGHT) {
+            return false;
+        }
+        for (PropertyAnalysis.Result property : properties) {
+            if (property.nodeId() != join.getId() || property.status() != PropertyAnalysis.Status.PROVED) {
+                continue;
+            }
+            if (property.kind().equals("join_remove")) {
+                select.setFrom(sqlJoin.getJoinType() == JoinType.LEFT ? sqlJoin.getLeft() : sqlJoin.getRight());
+                return true;
+            }
+            if (property.kind().equals("outer_inner")) {
+                select.setFrom(new SqlJoin(sqlJoin.getParserPosition(), sqlJoin.getLeft(), sqlJoin.isNaturalNode(),
+                        JoinType.INNER.symbol(sqlJoin.getParserPosition()), sqlJoin.getRight(),
+                        sqlJoin.getConditionTypeNode(), sqlJoin.getCondition()));
+                return true;
+            }
+        }
+        return false;
+    }
+
     static boolean apply(SqlNode query, SqlNode validated, RelNode plan, List<Analyzer.RuleResult> rules) {
         SqlNode body = query instanceof SqlOrderBy orderBy ? orderBy.query : query;
         if (!(body instanceof SqlSelect select)) {

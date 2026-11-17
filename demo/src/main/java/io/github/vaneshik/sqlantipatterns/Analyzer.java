@@ -39,9 +39,11 @@ import org.apache.calcite.util.ImmutableBitSet;
 public final class Analyzer {
     public enum Status { FOUND, NOT_FOUND, UNSUPPORTED }
 
-    public record Result(String plan, PlanNode tree, List<RuleResult> rules, Optimization optimized) {}
+    public record Result(String plan, PlanNode tree, List<RuleResult> rules,
+                         List<PropertyAnalysis.Result> properties, Optimization optimized) {}
 
-    public record Optimization(String sql, String plan, PlanNode tree, List<RuleResult> rules, boolean changed) {}
+    public record Optimization(String sql, String plan, PlanNode tree, List<RuleResult> rules,
+                               List<PropertyAnalysis.Result> properties, boolean changed) {}
 
     public record RuleResult(String ruleId, String title, String pattern, Status status,
                              String explanation, String recommendation, List<Integer> matchedNodeIds) {
@@ -77,12 +79,15 @@ public final class Analyzer {
             String plan = RelOptUtil.toString(rel);
             PlanNode tree = PlanNode.from(rel);
             List<RuleResult> rules = checkRules(original, rel);
+            List<PropertyAnalysis.Result> properties = PropertyAnalysis.analyze(statement, rel);
             SqlNode rewritten = SqlParser.create(statement, parserConfig).parseQuery();
             RelNode optimized = rel;
             List<RuleResult> optimizedRules = rules;
+            List<PropertyAnalysis.Result> optimizedProperties = properties;
             String optimizedSql = sql;
             boolean changed = false;
-            while (SqlRewrite.apply(rewritten, validated, optimized, optimizedRules)) {
+            while (SqlRewrite.apply(rewritten, validated, optimized, optimizedRules)
+                    || SqlRewrite.applyProperties(rewritten, optimized, optimizedProperties)) {
                 String rewrittenStatement = SqlRewrite.format(rewritten);
                 optimizedSql = rewrittenStatement + ";";
                 planner.close();
@@ -90,10 +95,12 @@ public final class Analyzer {
                 validated = planner.validate(planner.parse(rewrittenStatement));
                 optimized = planner.rel(validated).project();
                 optimizedRules = checkRules(rewritten, optimized);
+                optimizedProperties = PropertyAnalysis.analyze(rewrittenStatement, optimized);
                 changed = true;
             }
-            return new Result(plan, tree, rules, new Optimization(optimizedSql, RelOptUtil.toString(optimized),
-                    PlanNode.from(optimized), optimizedRules, changed));
+            return new Result(plan, tree, rules, properties,
+                    new Optimization(optimizedSql, RelOptUtil.toString(optimized),
+                            PlanNode.from(optimized), optimizedRules, optimizedProperties, changed));
         }
     }
 
